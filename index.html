@@ -67,9 +67,7 @@
 
     <!-- STATUS TAB -->
     <section id="tab-status" class="tab-pane active">
-      <div id="pointsBanner" class="points-banner hidden">
-        <span id="pointsCount">0</span> STAT POINTS AVAILABLE
-      </div>
+      <div id="weakStatCallout" class="focus-banner hidden"></div>
       <div class="stat-grid" id="statGrid"></div>
 
       <div class="panel-divider"></div>
@@ -80,6 +78,10 @@
       <div class="rank-row">
         <span class="job-label">RANK</span>
         <span id="rankValue" class="job-value rank-value">E</span>
+      </div>
+      <div id="debuffRow" class="rank-row debuff-row hidden">
+        <span class="job-label">PENALTY DEBUFF</span>
+        <span id="debuffValue" class="job-value debuff-value">-0% XP</span>
       </div>
     </section>
 

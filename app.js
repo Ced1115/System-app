@@ -1,6 +1,6 @@
 // ===================== THE SYSTEM — app logic =====================
 
-const STORAGE_KEY = 'system_state_v3'; // v3: quest pools + daily random roll per stat
+const STORAGE_KEY = 'system_state_v6'; // v6: weak-stat detection + mandatory focus quest
 
 const STATS = [
   { id: 'STR', name: 'Strength' },   // bodyweight/strength quests
@@ -8,6 +8,7 @@ const STATS = [
   { id: 'AGI', name: 'Agility' },    // stretches / mobility
   { id: 'INT', name: 'Intelligence' }, // learning / study
   { id: 'SNS', name: 'Sense' },      // archery, balance, reaction/reflex, breathwork/focus
+  { id: 'DIS', name: 'Discipline' }, // chores, life admin, hygiene, errands — the unglamorous stuff
 ];
 
 const RANKS = [
@@ -30,6 +31,39 @@ function statXpNeeded(level) {
   return 50 + (level - 1) * 15;
 }
 
+const WEAK_STAT_THRESHOLD = 3; // levels behind the average of the other stats to count as "weak"
+
+// Relative level = level + fractional progress into the next level's XP bar.
+// Lets us compare stats fairly even mid-level (e.g. STR 4 at 90% progress
+// is meaningfully ahead of STR 4 at 5% progress).
+function relativeStatLevel(statId) {
+  const s = state.stats[statId];
+  if (!s) return 0;
+  const needed = statXpNeeded(s.level);
+  return s.level + (needed > 0 ? s.xp / needed : 0);
+}
+
+// Returns the stat id that's at least WEAK_STAT_THRESHOLD levels behind the
+// average of all OTHER stats, or null if nothing qualifies. Only ever
+// returns one stat — the single furthest-behind one, if it clears the bar.
+function findWeakStat() {
+  const levels = {};
+  STATS.forEach(s => { levels[s.id] = relativeStatLevel(s.id); });
+
+  let weakest = null;
+  let worstGap = 0;
+  STATS.forEach(s => {
+    const others = STATS.filter(o => o.id !== s.id).map(o => levels[o.id]);
+    const avgOthers = others.reduce((a, b) => a + b, 0) / others.length;
+    const gap = avgOthers - levels[s.id];
+    if (gap >= WEAK_STAT_THRESHOLD && gap > worstGap) {
+      worstGap = gap;
+      weakest = s.id;
+    }
+  });
+  return weakest;
+}
+
 function defaultTiers(easy, easyXp, med, medXp, hard, hardXp, brutal, brutalXp) {
   return [
     { label: 'Easy', target: easy, xp: easyXp },
@@ -46,16 +80,17 @@ function defaultState() {
     playerName: 'PLAYER',
     level: 1,
     xp: 0,
-    statPoints: 0,
     stats,
     questPool: defaultQuestPool(),
     dailyRoll: {},          // { STR: questId, VIT: questId, ... } — today's mandatory pick per stat
     lastRoll: {},           // { STR: questId, ... } — yesterday's pick, so we avoid repeats
+    todayWeakStat: null,    // stat id flagged as "weak" for the current cycle, or null
     dailyProgress: {},      // { questId: { tiersCleared: [bool,bool,bool,bool], current, tierIndex } }
     oneOffQuests: [],       // { id, name, unit, stat, tiers, tiersCleared, current, tierIndex }
     lastResetISO: null,     // ISO date string of last daily reset
     penaltyActive: false,
     penaltyQuest: null,     // a generated makeup quest while penalty is active
+    failStreak: 0,          // consecutive failed cycles (< required cleared count) — drives escalating debuff
     log: [],                // { dateISO, type, msg }
   };
 }
@@ -72,6 +107,10 @@ function defaultQuestPool() {
       { id: 'p_str_4', name: 'Plank Hold', unit: 'min', stat: 'STR', tiers: defaultTiers(1, 10, 3, 25, 5, 45, 8, 70) },
       { id: 'p_str_5', name: 'Forge / Anvil Work', unit: 'min', stat: 'STR', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 70) },
       { id: 'p_str_6', name: 'Weighted Carry', unit: 'min', stat: 'STR', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 30, 70) },
+      { id: 'p_str_7', name: 'Dips', unit: 'reps', stat: 'STR', tiers: defaultTiers(5, 10, 20, 25, 40, 45, 70, 70) },
+      { id: 'p_str_8', name: 'Deadlifts / Weighted Lifts', unit: 'min', stat: 'STR', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 70) },
+      { id: 'p_str_9', name: 'Stone Sculpture / Chiseling', unit: 'min', stat: 'STR', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 70) },
+      { id: 'p_str_10', name: 'Handstand / Planche Work', unit: 'min', stat: 'STR', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 35, 70) },
     ],
     VIT: [
       { id: 'p_vit_1', name: 'Run', unit: 'km', stat: 'VIT', tiers: defaultTiers(1, 10, 3, 25, 5, 45, 10, 80) },
@@ -79,6 +118,10 @@ function defaultQuestPool() {
       { id: 'p_vit_3', name: 'Jump Rope', unit: 'min', stat: 'VIT', tiers: defaultTiers(3, 10, 8, 25, 15, 45, 25, 80) },
       { id: 'p_vit_4', name: 'Stairs / Hill Sprints', unit: 'min', stat: 'VIT', tiers: defaultTiers(3, 10, 8, 25, 15, 45, 25, 80) },
       { id: 'p_vit_5', name: 'Swimming', unit: 'min', stat: 'VIT', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 80) },
+      { id: 'p_vit_6', name: 'Hiking', unit: 'km', stat: 'VIT', tiers: defaultTiers(2, 10, 5, 25, 10, 45, 18, 80) },
+      { id: 'p_vit_7', name: 'Rowing / Erg', unit: 'min', stat: 'VIT', tiers: defaultTiers(5, 10, 12, 25, 25, 45, 40, 80) },
+      { id: 'p_vit_8', name: 'Burpees', unit: 'reps', stat: 'VIT', tiers: defaultTiers(10, 10, 30, 25, 60, 45, 100, 80) },
+      { id: 'p_vit_9', name: 'Calisthenics Circuit', unit: 'min', stat: 'VIT', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 80) },
     ],
     AGI: [
       { id: 'p_agi_1', name: 'Stretching', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 30, 35, 60, 60) },
@@ -86,6 +129,9 @@ function defaultQuestPool() {
       { id: 'p_agi_3', name: 'Footwork Drills', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 45, 60) },
       { id: 'p_agi_4', name: 'Jumping Jacks / Agility Ladder', unit: 'min', stat: 'AGI', tiers: defaultTiers(3, 8, 8, 20, 15, 35, 25, 60) },
       { id: 'p_agi_5', name: 'Yoga Flow', unit: 'min', stat: 'AGI', tiers: defaultTiers(10, 8, 20, 20, 35, 35, 60, 60) },
+      { id: 'p_agi_6', name: 'Hip Mobility / Splits Work', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 45, 60) },
+      { id: 'p_agi_7', name: 'Dynamic Warmup', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 10, 20, 20, 35, 35, 60) },
+      { id: 'p_agi_8', name: 'Archery Footwork / Stance Drills', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 40, 60) },
     ],
     INT: [
       { id: 'p_int_1', name: 'Study', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 80) },
@@ -93,6 +139,9 @@ function defaultQuestPool() {
       { id: 'p_int_3', name: 'Robotics / Code Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
       { id: 'p_int_4', name: 'Reading (non-fiction)', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 100, 80) },
       { id: 'p_int_5', name: 'CAD / Design Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
+      { id: 'p_int_6', name: 'FreeCAD / Hexapod Design', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
+      { id: 'p_int_7', name: 'Physics / Math Practice', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 100, 80) },
+      { id: 'p_int_8', name: 'Documentation / Note Writing', unit: 'min', stat: 'INT', tiers: defaultTiers(10, 10, 25, 25, 45, 45, 80, 80) },
     ],
     SNS: [
       { id: 'p_sns_1', name: 'Archery Practice', unit: 'shots', stat: 'SNS', tiers: defaultTiers(10, 10, 30, 25, 60, 45, 100, 80) },
@@ -100,6 +149,21 @@ function defaultQuestPool() {
       { id: 'p_sns_3', name: 'Reaction Drills', unit: 'min', stat: 'SNS', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 35, 80) },
       { id: 'p_sns_4', name: 'Meditation / Breathwork', unit: 'min', stat: 'SNS', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 40, 80) },
       { id: 'p_sns_5', name: 'Sparring / Airsoft Drill', unit: 'min', stat: 'SNS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 80) },
+      { id: 'p_sns_6', name: 'Slacklining', unit: 'min', stat: 'SNS', tiers: defaultTiers(3, 10, 8, 25, 15, 45, 25, 80) },
+      { id: 'p_sns_7', name: 'Knife / Blade Precision Work', unit: 'min', stat: 'SNS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 80) },
+      { id: 'p_sns_8', name: 'Cold Exposure / Breath Hold', unit: 'min', stat: 'SNS', tiers: defaultTiers(1, 10, 3, 25, 6, 45, 10, 80) },
+    ],
+    DIS: [
+      { id: 'p_dis_1', name: 'Clean Your Room', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
+      { id: 'p_dis_2', name: 'Do the Dishes', unit: 'min', stat: 'DIS', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 30, 70) },
+      { id: 'p_dis_3', name: 'Laundry', unit: 'loads', stat: 'DIS', tiers: defaultTiers(1, 10, 2, 25, 3, 45, 4, 70) },
+      { id: 'p_dis_4', name: 'Meal Prep / Cooking', unit: 'min', stat: 'DIS', tiers: defaultTiers(15, 10, 30, 25, 45, 45, 70, 70) },
+      { id: 'p_dis_5', name: 'Errands / Admin Tasks', unit: 'min', stat: 'DIS', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 100, 70) },
+      { id: 'p_dis_6', name: 'Tidy Workspace / Tool Organization', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 70) },
+      { id: 'p_dis_7', name: 'No Phone Before Bed', unit: 'min', stat: 'DIS', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 90, 70) },
+      { id: 'p_dis_8', name: 'Early Wake-up (before 7AM)', unit: 'days', stat: 'DIS', tiers: defaultTiers(1, 15, 1, 30, 1, 50, 1, 80) },
+      { id: 'p_dis_9', name: 'Budget / Finance Review', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 60, 70) },
+      { id: 'p_dis_10', name: 'Inbox Zero / Messages Cleanup', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
     ],
   };
 }
@@ -150,6 +214,16 @@ function nextResetTime() {
   return reset;
 }
 
+const REQUIRED_CLEARS = 4; // out of STATS.length (6) mandatory daily quests
+const DEBUFF_PER_FAIL = 0.15;  // -15% XP gain per consecutive failed cycle
+const DEBUFF_CAP = 0.60;       // caps at -60% XP gain
+const STAT_LOSS_PER_FAIL = 0.15; // -15% of current stat's xp-to-next per consecutive fail
+const STAT_LOSS_CAP = 0.60;      // caps at -60%
+
+function currentDebuffFraction() {
+  return Math.min(DEBUFF_CAP, state.failStreak * DEBUFF_PER_FAIL);
+}
+
 function checkDailyRollover() {
   const cycle = currentCycleKey();
   if (state.lastResetISO === cycle) return;
@@ -162,9 +236,9 @@ function checkDailyRollover() {
     return;
   }
 
-  // evaluate previous cycle: need at least 3 of the 5 rolled stat-quests
-  // cleared (any tier, >=75%). Since exactly one quest is rolled per stat,
-  // "3 of 5" automatically means 3 different stats.
+  // evaluate previous cycle: need at least REQUIRED_CLEARS of the rolled
+  // stat-quests cleared (any tier, >=75%). One quest is rolled per stat, so
+  // this automatically means that many different stats represented.
   let clearedCount = 0;
   STATS.forEach(s => {
     const qid = state.dailyRoll[s.id];
@@ -173,16 +247,49 @@ function checkDailyRollover() {
     if (prog && prog.tiersCleared && prog.tiersCleared.some(Boolean)) clearedCount += 1;
   });
 
-  const hadFullRoll = STATS.every(s => !!state.dailyRoll[s.id]);
-  if (hadFullRoll && clearedCount < 3) {
-    triggerPenalty();
+  // hard requirement: if a stat was flagged as "weak" for today's cycle, its
+  // quest MUST clear — failing it alone triggers a penalty regardless of how
+  // many of the other 6 cleared. Uses the snapshot taken when today was
+  // rolled, not a fresh recalculation (stat levels may have shifted since).
+  let weakStatFailed = false;
+  if (state.todayWeakStat) {
+    const qid = state.dailyRoll[state.todayWeakStat];
+    const prog = qid && state.dailyProgress[qid];
+    const cleared = prog && prog.tiersCleared && prog.tiersCleared.some(Boolean);
+    if (!cleared) weakStatFailed = true;
   }
 
-  addLog('reset', 'Daily Quest cycle reset. Cleared ' + clearedCount + '/5 stat quests.');
+  const hadFullRoll = STATS.every(s => !!state.dailyRoll[s.id]);
+  if (hadFullRoll && (clearedCount < REQUIRED_CLEARS || weakStatFailed)) {
+    state.failStreak += 1;
+    applyStatLossForFailedCycle();
+    triggerPenalty();
+    if (weakStatFailed && clearedCount >= REQUIRED_CLEARS) {
+      addLog('penalty', 'Focus quest (' + state.todayWeakStat + ') was not cleared — penalty triggered despite meeting the general quota.');
+    }
+  }
+
+  addLog('reset', 'Daily Quest cycle reset. Cleared ' + clearedCount + '/' + STATS.length + ' stat quests.');
   rollDailyQuests();
   state.dailyProgress = {};
   state.lastResetISO = cycle;
   saveState();
+}
+
+// Applies a one-time XP loss to every stat (and the player level bar) when a
+// cycle fails. Loss scales with the current fail streak, same cap as the
+// gain-debuff, and never drops a stat's xp below 0 or removes levels.
+function applyStatLossForFailedCycle() {
+  const lossFraction = Math.min(STAT_LOSS_CAP, state.failStreak * STAT_LOSS_PER_FAIL);
+  STATS.forEach(s => {
+    const stat = state.stats[s.id];
+    const needed = statXpNeeded(stat.level);
+    const loss = Math.round(needed * lossFraction);
+    stat.xp = Math.max(0, stat.xp - loss);
+  });
+  const needed = xpNeededForLevel(state.level);
+  state.xp = Math.max(0, state.xp - Math.round(needed * lossFraction));
+  addLog('penalty', 'Stats weakened by the failed cycle (-' + Math.round(lossFraction * 100) + '% XP).');
 }
 
 // Rolls one random quest per stat from that stat's pool, avoiding yesterday's
@@ -203,6 +310,9 @@ function rollDailyQuests() {
   // remember today's picks so tomorrow's roll can avoid repeating them
   state.lastRoll = Object.assign({}, state.dailyRoll);
   state.dailyRoll = newRoll;
+  // snapshot the weak stat for this cycle — locked in at roll time so XP
+  // earned during the day doesn't retroactively change whether it was "weak"
+  state.todayWeakStat = findWeakStat();
 }
 
 function findPoolQuest(questId) {
@@ -227,20 +337,22 @@ function tierFraction(current, target) {
 
 function triggerPenalty() {
   state.penaltyActive = true;
+  const burpeeTarget = 100 + state.failStreak * 50; // escalates with consecutive fails
   state.penaltyQuest = {
     id: 'penalty_' + Date.now(),
-    name: 'Penalty Quest: 150 Burpees',
-    target: 150,
+    name: 'Penalty Quest: ' + burpeeTarget + ' Burpees',
+    target: burpeeTarget,
     unit: 'reps',
     current: 0,
   };
-  addLog('penalty', 'PENALTY ZONE triggered — Daily Quest failed.');
+  addLog('penalty', 'PENALTY ZONE triggered — failed cycle #' + state.failStreak + ' in a row.');
 }
 
 function clearPenalty() {
   state.penaltyActive = false;
   state.penaltyQuest = null;
-  addLog('reset', 'Penalty lifted.');
+  state.failStreak = 0;
+  addLog('reset', 'Penalty lifted. Fail streak reset.');
   saveState();
 }
 
@@ -255,13 +367,18 @@ function grantXP(amount, statId) {
   const levelUps = [];
   const statGains = [];
 
+  // while a penalty is active, all XP gains are reduced based on the fail streak
+  if (state.penaltyActive) {
+    const debuff = currentDebuffFraction();
+    amount = Math.round(amount * (1 - debuff));
+  }
+
   // player XP
   state.xp += amount;
   let needed = xpNeededForLevel(state.level);
   while (state.xp >= needed) {
     state.xp -= needed;
     state.level += 1;
-    state.statPoints += 3;
     levelUps.push(state.level);
     needed = xpNeededForLevel(state.level);
   }
@@ -284,6 +401,7 @@ function grantXP(amount, statId) {
     addLog('levelup', 'Reached Level ' + state.level + '.');
   }
   saveState();
+  return amount;
 }
 
 // ---------------- Rendering ----------------
@@ -308,6 +426,20 @@ function renderHud() {
 }
 
 function renderStatus() {
+  const weakStat = findWeakStat();
+
+  const callout = el('weakStatCallout');
+  if (weakStat) {
+    callout.classList.remove('hidden');
+    const statName = (STATS.find(s => s.id === weakStat) || {}).name || weakStat;
+    const lockedNote = state.todayWeakStat === weakStat
+      ? ' Its quest is locked in as today\'s required focus.'
+      : ' Tomorrow\'s roll will lock in a required focus quest for it.';
+    callout.innerHTML = `<span class="focus-banner-tag">WEAK STAT</span> ${statName} (${weakStat}) is falling behind the others.${lockedNote}`;
+  } else {
+    callout.classList.add('hidden');
+  }
+
   const grid = el('statGrid');
   grid.innerHTML = '';
   STATS.forEach(s => {
@@ -315,41 +447,30 @@ function renderStatus() {
     const needed = statXpNeeded(data.level);
     const pct = Math.min(100, (data.xp / needed) * 100);
     const row = document.createElement('div');
-    row.className = 'stat-row';
+    row.className = 'stat-row' + (s.id === weakStat ? ' weak' : '');
     row.innerHTML = `
       <span class="stat-id">${s.id}</span>
       <span class="stat-name">${s.name}</span>
+      ${s.id === weakStat ? '<span class="weak-stat-tag">WEAK</span>' : ''}
       <span class="stat-level">${data.level}</span>
-      <button class="stat-plus" data-stat="${s.id}" ${state.statPoints <= 0 ? 'disabled' : ''}>+</button>
       <div class="stat-mini-bar"><div class="stat-mini-fill" style="width:${pct}%"></div></div>
     `;
     grid.appendChild(row);
   });
-
-  const banner = el('pointsBanner');
-  if (state.statPoints > 0) {
-    banner.classList.remove('hidden');
-    el('pointsCount').textContent = state.statPoints;
-  } else {
-    banner.classList.add('hidden');
-  }
 
   const title = TITLES.slice().reverse().find(t => state.level >= t.min);
   const rank = RANKS.slice().reverse().find(r => state.level >= r.min);
   el('jobTitle').textContent = title ? title.label : 'Novice';
   el('rankValue').textContent = rank ? rank.label : 'E';
 
-  grid.querySelectorAll('.stat-plus').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (state.statPoints <= 0) return;
-      const sid = btn.dataset.stat;
-      state.stats[sid].level += 1;
-      state.statPoints -= 1;
-      saveState();
-      render();
-      showToast(sid + ' increased to ' + state.stats[sid].level);
-    });
-  });
+  const debuffRow = el('debuffRow');
+  if (state.penaltyActive) {
+    debuffRow.classList.remove('hidden');
+    const pct = Math.round(currentDebuffFraction() * 100);
+    el('debuffValue').textContent = '-' + pct + '% XP · fail streak: ' + state.failStreak;
+  } else {
+    debuffRow.classList.add('hidden');
+  }
 }
 
 function renderQuests() {
@@ -361,20 +482,33 @@ function renderQuests() {
   const dailyList = el('dailyQuestList');
   dailyList.innerHTML = '';
 
+  if (state.todayWeakStat) {
+    const banner = document.createElement('div');
+    banner.className = 'focus-banner';
+    const statName = (STATS.find(s => s.id === state.todayWeakStat) || {}).name || state.todayWeakStat;
+    banner.innerHTML = `<span class="focus-banner-tag">FOCUS</span> ${statName} is lagging behind — its quest today is mandatory no matter what else you clear.`;
+    dailyList.appendChild(banner);
+  }
+
   let clearedCount = 0;
-  STATS.forEach(s => {
+  // show the weak stat's quest first so it can't be missed, then the rest in stat order
+  const orderedStats = state.todayWeakStat
+    ? [STATS.find(s => s.id === state.todayWeakStat), ...STATS.filter(s => s.id !== state.todayWeakStat)]
+    : STATS;
+  orderedStats.forEach(s => {
     const qid = state.dailyRoll[s.id];
     if (!qid) return;
     const quest = findPoolQuest(qid);
     if (!quest) return;
     const prog = state.dailyProgress[qid] || { current: 0, tierIndex: 0, tiersCleared: [false, false, false, false] };
     if (prog.tiersCleared.some(Boolean)) clearedCount += 1;
-    dailyList.appendChild(buildTierQuestCard(quest, prog, 'daily', true));
+    const isFocus = state.todayWeakStat === s.id;
+    dailyList.appendChild(buildTierQuestCard(quest, prog, 'daily', isFocus ? 'focus' : true));
   });
 
-  el('dailyProgressCount').textContent = clearedCount + ' / 5 cleared · need 3 to avoid penalty';
-  el('dailyProgressCount').classList.toggle('warn', clearedCount < 3);
-  el('dailyProgressCount').classList.toggle('safe', clearedCount >= 3);
+  el('dailyProgressCount').textContent = clearedCount + ' / ' + STATS.length + ' cleared · need ' + REQUIRED_CLEARS + ' to avoid penalty';
+  el('dailyProgressCount').classList.toggle('warn', clearedCount < REQUIRED_CLEARS);
+  el('dailyProgressCount').classList.toggle('safe', clearedCount >= REQUIRED_CLEARS);
 
   if (state.penaltyActive && state.penaltyQuest) {
     const pq = state.penaltyQuest;
@@ -386,18 +520,28 @@ function renderQuests() {
     dailyList.appendChild(card);
   }
 
-  // ---- optional: rest of each stat's pool, not rolled today ----
+  // ---- optional: rest of each stat's pool, not rolled today, grouped by stat ----
   const optionalList = el('optionalQuestList');
   optionalList.innerHTML = '';
+  let anyOptional = false;
   STATS.forEach(s => {
     const pool = state.questPool[s.id] || [];
     const rolledId = state.dailyRoll[s.id];
-    pool.filter(q => q.id !== rolledId).forEach(quest => {
+    const remaining = pool.filter(q => q.id !== rolledId);
+    if (remaining.length === 0) return;
+    anyOptional = true;
+
+    const header = document.createElement('div');
+    header.className = 'optional-stat-header';
+    header.innerHTML = `<span class="optional-stat-id">${s.id}</span><span class="optional-stat-name">${s.name}</span>`;
+    optionalList.appendChild(header);
+
+    remaining.forEach(quest => {
       const prog = state.dailyProgress[quest.id] || { current: 0, tierIndex: 0, tiersCleared: [false, false, false, false] };
       optionalList.appendChild(buildTierQuestCard(quest, prog, 'daily', false));
     });
   });
-  if (optionalList.children.length === 0) {
+  if (!anyOptional) {
     optionalList.innerHTML = '<div class="log-empty">No optional quests in the pool.</div>';
   }
 
@@ -427,10 +571,17 @@ function buildTierQuestCard(quest, prog, kind, isMandatory) {
   const pct = Math.min(100, ((prog.current || 0) / activeTier.target) * 100);
   const fraction = tierFraction(prog.current || 0, activeTier.target);
 
+  const isFocus = isMandatory === 'focus';
   const card = document.createElement('div');
-  card.className = 'quest-card' + (allCleared ? ' complete' : '') + (isMandatory ? ' mandatory' : '');
+  card.className = 'quest-card' + (allCleared ? ' complete' : '') + (isFocus ? ' focus' : (isMandatory ? ' mandatory' : ''));
   const statLabel = quest.stat ? ' · ' + quest.stat : '';
-  const badge = isMandatory ? '<span class="mandatory-tag">MANDATORY</span>' : '<span class="optional-tag">optional</span>';
+  const badge = isFocus
+    ? '<span class="focus-tag">FOCUS · REQUIRED</span>'
+    : (isMandatory ? '<span class="mandatory-tag">MANDATORY</span>' : '<span class="optional-tag">optional</span>');
+  const displayXP = state.penaltyActive ? Math.round(activeTier.xp * (1 - currentDebuffFraction())) : activeTier.xp;
+  const xpDisplay = state.penaltyActive && displayXP < activeTier.xp
+    ? `<span class="xp-debuffed">+${displayXP} XP</span> <span class="xp-original">+${activeTier.xp}</span>${statLabel}`
+    : `+${activeTier.xp} XP${statLabel}`;
 
   const pips = tiers.map((t, i) => {
     const done = cleared[i];
@@ -445,7 +596,7 @@ function buildTierQuestCard(quest, prog, kind, isMandatory) {
     </div>
     <div class="quest-sub-row">
       <div class="tier-pip-row">${pips}</div>
-      <span class="quest-reward">+${activeTier.xp} XP${statLabel}</span>
+      <span class="quest-reward">${xpDisplay}</span>
     </div>
     <div class="quest-bar"><div class="quest-bar-fill ${fraction >= 1 ? 'full' : (fraction >= 0.75 ? 'partial' : '')}" style="width:${pct}%"></div></div>
     <div class="quest-progress-text">${prog.current || 0} / ${activeTier.target} ${quest.unit || ''} · ${activeTier.label}</div>
@@ -512,8 +663,9 @@ function renderLog() {
 }
 
 function renderPenalty() {
-  // Penalty overlay visibility is handled once on init() so it only
-  // interrupts the user on app open, not on every render() call.
+  // Persistent whole-app red tint for as long as the penalty is active —
+  // distinct from the one-time full-screen overlay shown on app open.
+  document.body.classList.toggle('penalty-tint', state.penaltyActive);
 }
 
 // ---------------- Progress modal (tap-to-log) ----------------
@@ -601,9 +753,10 @@ function saveProgress() {
     if (fraction > 0 && !alreadyCleared) {
       existing.tiersCleared[activeTierIndex] = true;
       const xpAward = fraction >= 1 ? tier.xp : Math.round(tier.xp * 0.75);
-      grantXP(xpAward, quest.stat);
-      addLog('quest', 'Completed "' + quest.name + '" (' + tier.label + ')' + (fraction < 1 ? ' partial' : '') + ' +' + xpAward + ' XP');
-      showToast('+' + xpAward + ' XP — ' + quest.name + ' (' + tier.label + ')');
+      const actualXP = grantXP(xpAward, quest.stat);
+      const debuffNote = actualXP < xpAward ? ' (debuffed)' : '';
+      addLog('quest', 'Completed "' + quest.name + '" (' + tier.label + ')' + (fraction < 1 ? ' partial' : '') + ' +' + actualXP + ' XP' + debuffNote);
+      showToast('+' + actualXP + ' XP — ' + quest.name + ' (' + tier.label + ')' + debuffNote);
     }
     state.dailyProgress[quest.id] = existing;
   } else if (kind === 'oneoff') {
@@ -616,9 +769,10 @@ function saveProgress() {
       if (fraction > 0 && !alreadyCleared) {
         q.tiersCleared[activeTierIndex] = true;
         const xpAward = fraction >= 1 ? tier.xp : Math.round(tier.xp * 0.75);
-        grantXP(xpAward, q.stat);
-        addLog('quest', 'Completed "' + q.name + '" (' + tier.label + ')' + (fraction < 1 ? ' partial' : '') + ' +' + xpAward + ' XP');
-        showToast('+' + xpAward + ' XP — ' + q.name + ' (' + tier.label + ')');
+        const actualXP = grantXP(xpAward, q.stat);
+        const debuffNote = actualXP < xpAward ? ' (debuffed)' : '';
+        addLog('quest', 'Completed "' + q.name + '" (' + tier.label + ')' + (fraction < 1 ? ' partial' : '') + ' +' + actualXP + ' XP' + debuffNote);
+        showToast('+' + actualXP + ' XP — ' + q.name + ' (' + tier.label + ')' + debuffNote);
       }
     }
   }

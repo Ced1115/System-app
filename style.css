@@ -122,13 +122,6 @@ button, input, select { font-family: inherit; }
 @keyframes paneIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---------- STATUS TAB ---------- */
-.points-banner {
-  background: rgba(255,210,61,0.08); border: 1px solid var(--gold);
-  color: var(--gold); text-align: center; padding: 8px; font-size: 11px;
-  letter-spacing: 2px; margin-bottom: 14px; animation: pointsPulse 1.8s infinite;
-}
-@keyframes pointsPulse { 0%,100% { box-shadow: 0 0 4px rgba(255,210,61,0.2); } 50% { box-shadow: 0 0 14px rgba(255,210,61,0.55); } }
-
 .stat-grid { display: flex; flex-direction: column; gap: 10px; }
 .stat-row {
   background: var(--panel); border: 1px solid var(--line);
@@ -138,15 +131,17 @@ button, input, select { font-family: inherit; }
 .stat-row::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--cyan-dim);
 }
+.stat-row.weak {
+  border-color: rgba(255,210,61,0.4); background: rgba(255,210,61,0.04);
+}
+.stat-row.weak::before { background: var(--gold); box-shadow: 0 0 6px rgba(255,210,61,0.6); }
 .stat-id { font-size: 11px; letter-spacing: 2px; color: var(--text-dim); width: 46px; flex-shrink: 0; }
 .stat-name { font-size: 13px; flex: 1; color: var(--text); }
-.stat-level { font-size: 18px; font-weight: 700; color: var(--cyan); min-width: 30px; text-align: right; font-family: 'Orbitron', sans-serif; }
-.stat-plus {
-  width: 26px; height: 26px; border: 1px solid var(--cyan-dim); color: var(--cyan);
-  background: transparent; font-size: 16px; line-height: 1; cursor: pointer; flex-shrink: 0;
+.weak-stat-tag {
+  font-size: 8px; letter-spacing: 1px; color: var(--gold); border: 1px solid var(--gold);
+  padding: 1px 5px; flex-shrink: 0; white-space: nowrap;
 }
-.stat-plus:active { background: rgba(61,220,255,0.15); }
-.stat-plus:disabled { opacity: 0.25; pointer-events: none; }
+.stat-level { font-size: 18px; font-weight: 700; color: var(--cyan); min-width: 30px; text-align: right; font-family: 'Orbitron', sans-serif; }
 .stat-mini-bar { position: absolute; bottom: 0; left: 2px; right: 0; height: 2px; background: rgba(61,220,255,0.15); }
 .stat-mini-fill { height: 100%; background: var(--cyan); }
 
@@ -178,6 +173,11 @@ button, input, select { font-family: inherit; }
 .quest-card.complete { border-color: var(--cyan-dim); background: rgba(61,220,255,0.04); }
 .quest-card.failed { border-color: rgba(255,59,78,0.4); }
 .quest-card.mandatory { border-left: 3px solid var(--violet); }
+.quest-card.focus {
+  border-left: 3px solid var(--gold); border-color: rgba(255,210,61,0.45);
+  background: rgba(255,210,61,0.04);
+  box-shadow: 0 0 14px rgba(255,210,61,0.12);
+}
 .quest-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
 .quest-name { font-size: 13px; color: var(--text); }
 .quest-name.done { color: var(--cyan); }
@@ -190,6 +190,21 @@ button, input, select { font-family: inherit; }
 .optional-tag {
   font-size: 9px; letter-spacing: 1px; color: var(--text-dim); border: 1px solid var(--line);
   padding: 2px 6px; flex-shrink: 0; white-space: nowrap;
+}
+.focus-tag {
+  font-size: 9px; letter-spacing: 1px; color: var(--gold); border: 1px solid var(--gold);
+  padding: 2px 6px; flex-shrink: 0; white-space: nowrap;
+  text-shadow: 0 0 6px rgba(255,210,61,0.5);
+}
+.focus-banner {
+  background: rgba(255,210,61,0.07); border: 1px solid rgba(255,210,61,0.4);
+  color: var(--text); font-size: 11px; line-height: 1.5; padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.focus-banner-tag {
+  display: inline-block; color: var(--gold); font-size: 10px; letter-spacing: 1px;
+  border: 1px solid var(--gold); padding: 1px 6px; margin-right: 6px;
+  text-shadow: 0 0 6px rgba(255,210,61,0.5);
 }
 .daily-progress-count {
   font-size: 11px; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px;
@@ -213,6 +228,18 @@ button, input, select { font-family: inherit; }
 .pool-stat-header:first-child { margin-top: 0; }
 .rolled-today-tag {
   font-size: 9px; color: var(--violet); letter-spacing: 0;
+}
+
+.optional-stat-header {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+.optional-stat-header:first-child { margin-top: 0; }
+.optional-stat-id {
+  font-size: 11px; letter-spacing: 2px; color: var(--cyan); font-weight: 700;
+}
+.optional-stat-name {
+  font-size: 10px; letter-spacing: 1px; color: var(--text-dim);
 }
 
 /* ---------- LOG TAB ---------- */
@@ -361,3 +388,35 @@ button, input, select { font-family: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--cyan); outline-offset: 2px;
 }
+
+/* ---------- PERSISTENT PENALTY TINT ---------- */
+body.penalty-tint {
+  background-image:
+    radial-gradient(circle at 50% -10%, rgba(255,59,78,0.10), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255,59,78,0.025) 0px, rgba(255,59,78,0.025) 1px, transparent 1px, transparent 3px);
+}
+body.penalty-tint::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 250;
+  background: rgba(255, 30, 45, 0.05);
+  box-shadow: inset 0 0 120px rgba(255, 30, 45, 0.35);
+  animation: penaltyAmbient 3s infinite ease-in-out;
+}
+@keyframes penaltyAmbient {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+body.penalty-tint .topbar::after { background: var(--red); box-shadow: 0 0 8px var(--red); }
+body.penalty-tint .level-num { color: var(--red); text-shadow: 0 0 14px rgba(255,59,78,0.65); }
+body.penalty-tint .xp-fill { background: linear-gradient(90deg, #7a1620, var(--red)); box-shadow: 0 0 10px rgba(255,59,78,0.7); }
+body.penalty-tint .tab-btn.active {
+  color: var(--red); border-color: rgba(255,59,78,0.5);
+  background: linear-gradient(180deg, rgba(255,59,78,0.1), transparent);
+  box-shadow: inset 0 0 12px rgba(255,59,78,0.15);
+}
+
+.rank-row.debuff-row { display: flex; }
+.debuff-value { color: var(--red); font-weight: 700; text-shadow: 0 0 8px rgba(255,59,78,0.6); }
+
+.xp-debuffed { color: var(--red); }
+.xp-original { text-decoration: line-through; color: var(--text-dim); font-size: 9px; }
