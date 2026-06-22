@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06080f">
+<title>THE SYSTEM</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="boot" class="boot-screen">
+  <div class="boot-text">
+    <span class="boot-line">[SYSTEM]</span>
+    <span class="boot-line">초기화 중...</span>
+    <span class="boot-line boot-final">CONNECTION ESTABLISHED</span>
+  </div>
+</div>
+
+<div id="penaltyOverlay" class="penalty-overlay hidden">
+  <div class="penalty-box">
+    <div class="penalty-title">PENALTY ZONE</div>
+    <div class="penalty-sub">You failed to complete your Daily Quest.</div>
+    <div class="penalty-sub2">Complete a Penalty Quest to lift the warning.</div>
+    <button id="penaltyAck" class="sys-btn danger">ACKNOWLEDGE</button>
+  </div>
+</div>
+
+<div id="levelUpOverlay" class="levelup-overlay hidden">
+  <div class="levelup-box">
+    <div class="levelup-glow"></div>
+    <div class="levelup-title">LEVEL UP!</div>
+    <div class="levelup-level">LV. <span id="newLevel">2</span></div>
+    <div id="statGainList" class="stat-gain-list"></div>
+    <button id="levelUpAck" class="sys-btn">CONTINUE</button>
+  </div>
+</div>
+
+<div id="app" class="app">
+
+  <header class="topbar">
+    <div class="title-block">
+      <div class="title-eyebrow">STATUS WINDOW</div>
+      <div class="player-name" id="playerName">PLAYER</div>
+    </div>
+    <div class="level-block">
+      <div class="level-num"><span id="hudLevel">1</span></div>
+      <div class="level-label">LEVEL</div>
+    </div>
+  </header>
+
+  <div class="xp-bar-wrap">
+    <div class="xp-bar"><div id="xpFill" class="xp-fill"></div></div>
+    <div class="xp-text"><span id="xpCurrent">0</span> / <span id="xpNeeded">100</span> XP</div>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="status">STATUS</button>
+    <button class="tab-btn" data-tab="quests">QUESTS</button>
+    <button class="tab-btn" data-tab="log">LOG</button>
+  </nav>
+
+  <main id="tabContent" class="tab-content">
+
+    <!-- STATUS TAB -->
+    <section id="tab-status" class="tab-pane active">
+      <div id="pointsBanner" class="points-banner hidden">
+        <span id="pointsCount">0</span> STAT POINTS AVAILABLE
+      </div>
+      <div class="stat-grid" id="statGrid"></div>
+
+      <div class="panel-divider"></div>
+      <div class="job-row">
+        <span class="job-label">TITLE</span>
+        <span id="jobTitle" class="job-value">Novice</span>
+      </div>
+      <div class="rank-row">
+        <span class="job-label">RANK</span>
+        <span id="rankValue" class="job-value rank-value">E</span>
+      </div>
+    </section>
+
+    <!-- QUESTS TAB -->
+    <section id="tab-quests" class="tab-pane">
+      <div class="quest-section-header">
+        <span>DAILY QUEST</span>
+        <span id="resetCountdown" class="reset-countdown">--:--:--</span>
+      </div>
+      <div id="dailyProgressCount" class="daily-progress-count">0 / 5 cleared · need 3 to avoid penalty</div>
+      <div id="dailyQuestList" class="quest-list"></div>
+
+      <div class="quest-section-header secondary">
+        <span>OPTIONAL TODAY</span>
+      </div>
+      <div id="optionalQuestList" class="quest-list"></div>
+
+      <div class="quest-section-header secondary">
+        <span>QUESTS</span>
+        <button id="addQuestBtn" class="add-quest-btn">+ NEW</button>
+      </div>
+      <div id="oneOffQuestList" class="quest-list"></div>
+
+      <div class="panel-divider"></div>
+      <button id="manageQuestsBtn" class="sys-btn ghost full-width">MANAGE QUEST POOL</button>
+    </section>
+
+    <!-- LOG TAB -->
+    <section id="tab-log" class="tab-pane">
+      <div id="logList" class="log-list"></div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add/Edit One-off Quest Modal -->
+<div id="questModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-title" id="questModalTitle">NEW QUEST</div>
+    <label class="field-label">NAME</label>
+    <input id="qName" class="field-input" type="text" placeholder="e.g. 5km run" maxlength="40">
+    <label class="field-label">UNIT</label>
+    <input id="qUnit" class="field-input" type="text" placeholder="reps / km / min" maxlength="14">
+    <label class="field-label">STAT</label>
+    <select id="qStat" class="field-input"></select>
+
+    <label class="field-label">DIFFICULTY TIERS</label>
+    <div class="tier-input-list">
+      <div class="tier-input-row">
+        <span class="tier-input-tag easy">EASY</span>
+        <input id="qTierTarget0" class="field-input small" type="number" min="0" placeholder="target">
+        <input id="qTierXP0" class="field-input small" type="number" min="0" placeholder="xp">
+      </div>
+      <div class="tier-input-row">
+        <span class="tier-input-tag medium">MEDIUM</span>
+        <input id="qTierTarget1" class="field-input small" type="number" min="0" placeholder="target">
+        <input id="qTierXP1" class="field-input small" type="number" min="0" placeholder="xp">
+      </div>
+      <div class="tier-input-row">
+        <span class="tier-input-tag hard">HARD</span>
+        <input id="qTierTarget2" class="field-input small" type="number" min="0" placeholder="target">
+        <input id="qTierXP2" class="field-input small" type="number" min="0" placeholder="xp">
+      </div>
+      <div class="tier-input-row">
+        <span class="tier-input-tag brutal">BRUTAL</span>
+        <input id="qTierTarget3" class="field-input small" type="number" min="0" placeholder="target">
+        <input id="qTierXP3" class="field-input small" type="number" min="0" placeholder="xp">
+      </div>
+    </div>
+    <div class="field-hint">Leave a tier blank to skip it. At least one tier required.</div>
+
+    <div class="modal-actions">
+      <button id="qCancel" class="sys-btn ghost">CANCEL</button>
+      <button id="qSave" class="sys-btn">CONFIRM</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Quest Pool Modal -->
+<div id="dailyModal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-title">QUEST POOL</div>
+    <div class="field-hint" style="margin:0 0 14px;">One quest per stat is rolled automatically each day. Add more here to expand the pool — more variety means fewer repeats.</div>
+    <div id="dailyTemplateList" class="daily-template-list"></div>
+    <button id="dailyAddBtn" class="sys-btn ghost full-width">+ ADD QUEST TO POOL</button>
+    <div class="modal-actions">
+      <button id="dailyClose" class="sys-btn">DONE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Progress Input Modal (for tap-to-log) -->
+<div id="progressModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-title" id="progressQuestName">LOG PROGRESS</div>
+    <div id="progressTierRow" class="tier-select-row"></div>
+    <label class="field-label" id="progressLabel">AMOUNT COMPLETED</label>
+    <input id="progressInput" class="field-input" type="number" min="0" value="0">
+    <div class="modal-actions">
+      <button id="progressCancel" class="sys-btn ghost">CANCEL</button>
+      <button id="progressSave" class="sys-btn">LOG</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
