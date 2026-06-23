@@ -111,6 +111,19 @@
 
     <!-- LOG TAB -->
     <section id="tab-log" class="tab-pane">
+      <div class="quest-section-header">
+        <span>LAST 7 DAYS</span>
+      </div>
+      <div id="weeklySummary" class="weekly-summary"></div>
+
+      <div class="quest-section-header secondary">
+        <span>WEAK STAT HISTORY</span>
+      </div>
+      <div id="weakStatHistory" class="weak-stat-history"></div>
+
+      <div class="quest-section-header secondary">
+        <span>FULL LOG</span>
+      </div>
       <div id="logList" class="log-list"></div>
     </section>
 
@@ -129,6 +142,11 @@
     <label class="field-label">STAT</label>
     <select id="qStat" class="field-input"></select>
 
+    <label id="qAnywhereRow" class="anywhere-checkbox-row">
+      <input id="qAnywhere" type="checkbox">
+      <span>"ANYWHERE" QUEST — no equipment or specific location needed (eligible as a reroll fallback on busy days)</span>
+    </label>
+
     <label class="field-label">DIFFICULTY TIERS</label>
     <div class="tier-input-list">
       <div class="tier-input-row">
@@ -141,6 +159,7 @@
         <input id="qTierTarget1" class="field-input small" type="number" min="0" placeholder="target">
         <input id="qTierXP1" class="field-input small" type="number" min="0" placeholder="xp">
       </div>
+      <button id="autoFillTiersBtn" type="button" class="auto-fill-btn">↓ AUTO-FILL EASY / HARD / BRUTAL FROM MEDIUM</button>
       <div class="tier-input-row">
         <span class="tier-input-tag hard">HARD</span>
         <input id="qTierTarget2" class="field-input small" type="number" min="0" placeholder="target">

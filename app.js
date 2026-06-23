@@ -1,6 +1,6 @@
 // ===================== THE SYSTEM — app logic =====================
 
-const STORAGE_KEY = 'system_state_v6'; // v6: weak-stat detection + mandatory focus quest
+const STORAGE_KEY = 'system_state_v8'; // v8: anywhere-quest tagging + once-daily reroll fallback
 
 const STATS = [
   { id: 'STR', name: 'Strength' },   // bodyweight/strength quests
@@ -85,6 +85,7 @@ function defaultState() {
     dailyRoll: {},          // { STR: questId, VIT: questId, ... } — today's mandatory pick per stat
     lastRoll: {},           // { STR: questId, ... } — yesterday's pick, so we avoid repeats
     todayWeakStat: null,    // stat id flagged as "weak" for the current cycle, or null
+    rerolledToday: {},      // { STR: true, ... } — stats whose mandatory quest was swapped to an "anywhere" quest today
     dailyProgress: {},      // { questId: { tiersCleared: [bool,bool,bool,bool], current, tierIndex } }
     oneOffQuests: [],       // { id, name, unit, stat, tiers, tiersCleared, current, tierIndex }
     lastResetISO: null,     // ISO date string of last daily reset
@@ -92,6 +93,9 @@ function defaultState() {
     penaltyQuest: null,     // a generated makeup quest while penalty is active
     failStreak: 0,          // consecutive failed cycles (< required cleared count) — drives escalating debuff
     log: [],                // { dateISO, type, msg }
+    dayHistory: [],         // [{ dateISO, cleared, total, xpEarned, penalty, weakStat }] — one entry per completed cycle, newest first
+    weakStatCounts: {},      // { STR: n, VIT: n, ... } — how many times each stat has been flagged weak
+    cycleXpEarned: 0,        // running total of XP earned during the current (not-yet-closed) cycle
   };
 }
 
@@ -101,16 +105,17 @@ function defaultState() {
 function defaultQuestPool() {
   return {
     STR: [
-      { id: 'p_str_1', name: 'Push-ups', unit: 'reps', stat: 'STR', tiers: defaultTiers(10, 10, 50, 25, 100, 45, 150, 70) },
-      { id: 'p_str_2', name: 'Squats', unit: 'reps', stat: 'STR', tiers: defaultTiers(15, 10, 60, 25, 120, 45, 180, 70) },
+      { id: 'p_str_1', name: 'Push-ups', unit: 'reps', stat: 'STR', anywhere: true, tiers: defaultTiers(10, 8, 50, 20, 100, 35, 150, 55) },
+      { id: 'p_str_2', name: 'Squats', unit: 'reps', stat: 'STR', anywhere: true, tiers: defaultTiers(15, 8, 60, 20, 120, 35, 180, 55) },
       { id: 'p_str_3', name: 'Pull-ups', unit: 'reps', stat: 'STR', tiers: defaultTiers(3, 10, 10, 25, 20, 45, 35, 70) },
-      { id: 'p_str_4', name: 'Plank Hold', unit: 'min', stat: 'STR', tiers: defaultTiers(1, 10, 3, 25, 5, 45, 8, 70) },
+      { id: 'p_str_4', name: 'Plank Hold', unit: 'min', stat: 'STR', anywhere: true, tiers: defaultTiers(1, 8, 3, 20, 5, 35, 8, 55) },
       { id: 'p_str_5', name: 'Forge / Anvil Work', unit: 'min', stat: 'STR', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 70) },
       { id: 'p_str_6', name: 'Weighted Carry', unit: 'min', stat: 'STR', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 30, 70) },
-      { id: 'p_str_7', name: 'Dips', unit: 'reps', stat: 'STR', tiers: defaultTiers(5, 10, 20, 25, 40, 45, 70, 70) },
+      { id: 'p_str_7', name: 'Dips', unit: 'reps', stat: 'STR', anywhere: true, tiers: defaultTiers(5, 8, 20, 20, 40, 35, 70, 55) },
       { id: 'p_str_8', name: 'Deadlifts / Weighted Lifts', unit: 'min', stat: 'STR', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 70) },
       { id: 'p_str_9', name: 'Stone Sculpture / Chiseling', unit: 'min', stat: 'STR', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 70) },
       { id: 'p_str_10', name: 'Handstand / Planche Work', unit: 'min', stat: 'STR', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 35, 70) },
+      { id: 'p_str_11', name: 'Lunges', unit: 'reps', stat: 'STR', anywhere: true, tiers: defaultTiers(10, 8, 40, 20, 80, 35, 130, 55) },
     ],
     VIT: [
       { id: 'p_vit_1', name: 'Run', unit: 'km', stat: 'VIT', tiers: defaultTiers(1, 10, 3, 25, 5, 45, 10, 80) },
@@ -120,38 +125,40 @@ function defaultQuestPool() {
       { id: 'p_vit_5', name: 'Swimming', unit: 'min', stat: 'VIT', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 80) },
       { id: 'p_vit_6', name: 'Hiking', unit: 'km', stat: 'VIT', tiers: defaultTiers(2, 10, 5, 25, 10, 45, 18, 80) },
       { id: 'p_vit_7', name: 'Rowing / Erg', unit: 'min', stat: 'VIT', tiers: defaultTiers(5, 10, 12, 25, 25, 45, 40, 80) },
-      { id: 'p_vit_8', name: 'Burpees', unit: 'reps', stat: 'VIT', tiers: defaultTiers(10, 10, 30, 25, 60, 45, 100, 80) },
-      { id: 'p_vit_9', name: 'Calisthenics Circuit', unit: 'min', stat: 'VIT', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 80) },
+      { id: 'p_vit_8', name: 'Burpees', unit: 'reps', stat: 'VIT', anywhere: true, tiers: defaultTiers(10, 8, 30, 20, 60, 35, 100, 55) },
+      { id: 'p_vit_9', name: 'Calisthenics Circuit', unit: 'min', stat: 'VIT', anywhere: true, tiers: defaultTiers(10, 8, 20, 20, 35, 35, 60, 55) },
+      { id: 'p_vit_10', name: 'High Knees / Jog in Place', unit: 'min', stat: 'VIT', anywhere: true, tiers: defaultTiers(3, 8, 8, 20, 15, 35, 25, 55) },
     ],
     AGI: [
-      { id: 'p_agi_1', name: 'Stretching', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 30, 35, 60, 60) },
-      { id: 'p_agi_2', name: 'Mobility Flow', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 45, 60) },
+      { id: 'p_agi_1', name: 'Stretching', unit: 'min', stat: 'AGI', anywhere: true, tiers: defaultTiers(5, 6, 15, 15, 30, 26, 60, 45) },
+      { id: 'p_agi_2', name: 'Mobility Flow', unit: 'min', stat: 'AGI', anywhere: true, tiers: defaultTiers(5, 6, 15, 15, 25, 26, 45, 45) },
       { id: 'p_agi_3', name: 'Footwork Drills', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 45, 60) },
-      { id: 'p_agi_4', name: 'Jumping Jacks / Agility Ladder', unit: 'min', stat: 'AGI', tiers: defaultTiers(3, 8, 8, 20, 15, 35, 25, 60) },
+      { id: 'p_agi_4', name: 'Jumping Jacks / Agility Ladder', unit: 'min', stat: 'AGI', anywhere: true, tiers: defaultTiers(3, 6, 8, 15, 15, 26, 25, 45) },
       { id: 'p_agi_5', name: 'Yoga Flow', unit: 'min', stat: 'AGI', tiers: defaultTiers(10, 8, 20, 20, 35, 35, 60, 60) },
-      { id: 'p_agi_6', name: 'Hip Mobility / Splits Work', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 45, 60) },
-      { id: 'p_agi_7', name: 'Dynamic Warmup', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 10, 20, 20, 35, 35, 60) },
+      { id: 'p_agi_6', name: 'Hip Mobility / Splits Work', unit: 'min', stat: 'AGI', anywhere: true, tiers: defaultTiers(5, 6, 15, 15, 25, 26, 45, 45) },
+      { id: 'p_agi_7', name: 'Dynamic Warmup', unit: 'min', stat: 'AGI', anywhere: true, tiers: defaultTiers(5, 6, 10, 15, 20, 26, 35, 45) },
       { id: 'p_agi_8', name: 'Archery Footwork / Stance Drills', unit: 'min', stat: 'AGI', tiers: defaultTiers(5, 8, 15, 20, 25, 35, 40, 60) },
     ],
     INT: [
-      { id: 'p_int_1', name: 'Study', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 120, 80) },
-      { id: 'p_int_2', name: 'Japanese (Anki / Genki)', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 90, 80) },
+      { id: 'p_int_1', name: 'Study', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 120, 60) },
+      { id: 'p_int_2', name: 'Japanese (Anki / Genki)', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 90, 60) },
       { id: 'p_int_3', name: 'Robotics / Code Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
-      { id: 'p_int_4', name: 'Reading (non-fiction)', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 100, 80) },
+      { id: 'p_int_4', name: 'Reading (non-fiction)', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 100, 60) },
       { id: 'p_int_5', name: 'CAD / Design Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
       { id: 'p_int_6', name: 'FreeCAD / Hexapod Design', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
       { id: 'p_int_7', name: 'Physics / Math Practice', unit: 'min', stat: 'INT', tiers: defaultTiers(15, 10, 30, 25, 60, 45, 100, 80) },
-      { id: 'p_int_8', name: 'Documentation / Note Writing', unit: 'min', stat: 'INT', tiers: defaultTiers(10, 10, 25, 25, 45, 45, 80, 80) },
+      { id: 'p_int_8', name: 'Documentation / Note Writing', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(10, 8, 25, 20, 45, 35, 80, 60) },
     ],
     SNS: [
       { id: 'p_sns_1', name: 'Archery Practice', unit: 'shots', stat: 'SNS', tiers: defaultTiers(10, 10, 30, 25, 60, 45, 100, 80) },
-      { id: 'p_sns_2', name: 'Balance Training', unit: 'min', stat: 'SNS', tiers: defaultTiers(3, 10, 8, 25, 15, 45, 25, 80) },
+      { id: 'p_sns_2', name: 'Balance Training', unit: 'min', stat: 'SNS', anywhere: true, tiers: defaultTiers(3, 8, 8, 20, 15, 35, 25, 60) },
       { id: 'p_sns_3', name: 'Reaction Drills', unit: 'min', stat: 'SNS', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 35, 80) },
-      { id: 'p_sns_4', name: 'Meditation / Breathwork', unit: 'min', stat: 'SNS', tiers: defaultTiers(5, 10, 10, 25, 20, 45, 40, 80) },
+      { id: 'p_sns_4', name: 'Meditation / Breathwork', unit: 'min', stat: 'SNS', anywhere: true, tiers: defaultTiers(5, 8, 10, 20, 20, 35, 40, 60) },
       { id: 'p_sns_5', name: 'Sparring / Airsoft Drill', unit: 'min', stat: 'SNS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 80) },
       { id: 'p_sns_6', name: 'Slacklining', unit: 'min', stat: 'SNS', tiers: defaultTiers(3, 10, 8, 25, 15, 45, 25, 80) },
       { id: 'p_sns_7', name: 'Knife / Blade Precision Work', unit: 'min', stat: 'SNS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 80) },
-      { id: 'p_sns_8', name: 'Cold Exposure / Breath Hold', unit: 'min', stat: 'SNS', tiers: defaultTiers(1, 10, 3, 25, 6, 45, 10, 80) },
+      { id: 'p_sns_8', name: 'Cold Exposure / Breath Hold', unit: 'min', stat: 'SNS', anywhere: true, tiers: defaultTiers(1, 8, 3, 20, 6, 35, 10, 60) },
+      { id: 'p_sns_9', name: 'Eyes-Closed Balance / Proprioception Drill', unit: 'min', stat: 'SNS', anywhere: true, tiers: defaultTiers(2, 8, 5, 20, 10, 35, 18, 60) },
     ],
     DIS: [
       { id: 'p_dis_1', name: 'Clean Your Room', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
@@ -260,7 +267,9 @@ function checkDailyRollover() {
   }
 
   const hadFullRoll = STATS.every(s => !!state.dailyRoll[s.id]);
-  if (hadFullRoll && (clearedCount < REQUIRED_CLEARS || weakStatFailed)) {
+  const penaltyTriggeredToday = hadFullRoll && (clearedCount < REQUIRED_CLEARS || weakStatFailed);
+
+  if (penaltyTriggeredToday) {
     state.failStreak += 1;
     applyStatLossForFailedCycle();
     triggerPenalty();
@@ -270,6 +279,22 @@ function checkDailyRollover() {
   }
 
   addLog('reset', 'Daily Quest cycle reset. Cleared ' + clearedCount + '/' + STATS.length + ' stat quests.');
+
+  // record a compact snapshot of the cycle that just ended, for the weekly summary
+  if (hadFullRoll) {
+    state.dayHistory = state.dayHistory || [];
+    state.dayHistory.unshift({
+      dateISO: new Date().toISOString(),
+      cleared: clearedCount,
+      total: STATS.length,
+      xpEarned: state.cycleXpEarned || 0,
+      penalty: penaltyTriggeredToday,
+      weakStat: state.todayWeakStat || null,
+    });
+    if (state.dayHistory.length > 60) state.dayHistory.length = 60; // ~8-9 weeks, keeps storage bounded
+  }
+  state.cycleXpEarned = 0;
+
   rollDailyQuests();
   state.dailyProgress = {};
   state.lastResetISO = cycle;
@@ -310,9 +335,14 @@ function rollDailyQuests() {
   // remember today's picks so tomorrow's roll can avoid repeating them
   state.lastRoll = Object.assign({}, state.dailyRoll);
   state.dailyRoll = newRoll;
+  state.rerolledToday = {}; // fresh reroll allowance for the new cycle
   // snapshot the weak stat for this cycle — locked in at roll time so XP
   // earned during the day doesn't retroactively change whether it was "weak"
   state.todayWeakStat = findWeakStat();
+  if (state.todayWeakStat) {
+    state.weakStatCounts = state.weakStatCounts || {};
+    state.weakStatCounts[state.todayWeakStat] = (state.weakStatCounts[state.todayWeakStat] || 0) + 1;
+  }
 }
 
 function findPoolQuest(questId) {
@@ -321,6 +351,35 @@ function findPoolQuest(questId) {
     if (q) return q;
   }
   return null;
+}
+
+// Swaps today's mandatory quest for a given stat to one of that stat's
+// "anywhere" (no equipment/location needed) quests, for days when the
+// normal pick isn't realistically doable. Once per stat per cycle — after
+// using it you're locked into the anywhere quest for the rest of the day.
+function rerollToAnywhereQuest(statId) {
+  if (state.rerolledToday[statId]) {
+    showToast('Already rerolled ' + statId + ' today.');
+    return;
+  }
+  const pool = state.questPool[statId] || [];
+  const currentId = state.dailyRoll[statId];
+  const anywhereOptions = pool.filter(q => q.anywhere && q.id !== currentId);
+  if (anywhereOptions.length === 0) {
+    showToast('No "anywhere" quest available for ' + statId + ' yet — add one in MANAGE QUEST POOL.');
+    return;
+  }
+  const pick = anywhereOptions[Math.floor(Math.random() * anywhereOptions.length)];
+
+  // clear any progress logged against the old quest for this slot, since
+  // it's being replaced and no longer counts toward today's requirement
+  if (currentId) delete state.dailyProgress[currentId];
+
+  state.dailyRoll[statId] = pick.id;
+  state.rerolledToday[statId] = true;
+  saveState();
+  render();
+  showToast('Rerolled ' + statId + ' → ' + pick.name + ' (lower XP, no equipment needed)');
 }
 
 // Returns the XP fraction earned for a single tier attempt: 1 if target met,
@@ -372,6 +431,8 @@ function grantXP(amount, statId) {
     const debuff = currentDebuffFraction();
     amount = Math.round(amount * (1 - debuff));
   }
+
+  state.cycleXpEarned = (state.cycleXpEarned || 0) + amount;
 
   // player XP
   state.xp += amount;
@@ -601,6 +662,29 @@ function buildTierQuestCard(quest, prog, kind, isMandatory) {
     <div class="quest-bar"><div class="quest-bar-fill ${fraction >= 1 ? 'full' : (fraction >= 0.75 ? 'partial' : '')}" style="width:${pct}%"></div></div>
     <div class="quest-progress-text">${prog.current || 0} / ${activeTier.target} ${quest.unit || ''} · ${activeTier.label}</div>
   `;
+
+  // reroll option: only for mandatory/focus quests (not optional or one-off),
+  // hidden once the quest is already cleared today
+  if (isMandatory && quest.stat && !anyCleared) {
+    const alreadyRerolled = !!state.rerolledToday[quest.stat];
+    const hasAnywhereOption = (state.questPool[quest.stat] || []).some(q => q.anywhere && q.id !== quest.id);
+    const rerollBtn = document.createElement('button');
+    rerollBtn.className = 'reroll-btn';
+    if (alreadyRerolled) {
+      rerollBtn.textContent = '↻ already rerolled today';
+      rerollBtn.disabled = true;
+    } else if (!hasAnywhereOption) {
+      rerollBtn.textContent = '↻ no fallback quest set up for ' + quest.stat;
+      rerollBtn.disabled = true;
+    } else {
+      rerollBtn.textContent = '↻ can\'t do this today — swap for a no-equipment quest';
+      rerollBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        rerollToAnywhereQuest(quest.stat);
+      });
+    }
+    card.appendChild(rerollBtn);
+  }
   if (kind === 'oneoff') {
     const del = document.createElement('button');
     del.className = 'quest-delete';
@@ -647,6 +731,9 @@ function updateCountdown(reset) {
 }
 
 function renderLog() {
+  renderWeeklySummary();
+  renderWeakStatHistory();
+
   const list = el('logList');
   list.innerHTML = '';
   if (state.log.length === 0) {
@@ -660,6 +747,61 @@ function renderLog() {
     d.innerHTML = `<div class="log-date">${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div><div class="log-msg">${entry.msg}</div>`;
     list.appendChild(d);
   });
+}
+
+// Last 7 completed cycles: total XP, days cleared, penalty count, and which
+// stat earned the most XP this week (derived from dayHistory snapshots).
+function renderWeeklySummary() {
+  const section = el('weeklySummary');
+  const history = (state.dayHistory || []).slice(0, 7);
+  if (history.length === 0) {
+    section.innerHTML = '<div class="log-empty">No completed cycles yet — check back after your first daily reset.</div>';
+    return;
+  }
+
+  const totalXP = history.reduce((sum, d) => sum + (d.xpEarned || 0), 0);
+  const cleanDays = history.filter(d => !d.penalty).length;
+  const penaltyDays = history.filter(d => d.penalty).length;
+  const avgCleared = (history.reduce((sum, d) => sum + (d.cleared || 0), 0) / history.length).toFixed(1);
+
+  section.innerHTML = `
+    <div class="weekly-grid">
+      <div class="weekly-stat"><span class="weekly-num">${totalXP}</span><span class="weekly-label">XP earned</span></div>
+      <div class="weekly-stat"><span class="weekly-num">${cleanDays}/${history.length}</span><span class="weekly-label">clean days</span></div>
+      <div class="weekly-stat"><span class="weekly-num">${avgCleared}/${STATS.length}</span><span class="weekly-label">avg cleared</span></div>
+    </div>
+    <div class="weekly-days">${history.map(d => {
+      const cls = d.penalty ? 'fail' : (d.cleared >= STATS.length ? 'perfect' : 'ok');
+      const day = new Date(d.dateISO).toLocaleDateString(undefined, { weekday: 'short' });
+      return `<div class="weekly-day-pip ${cls}" title="${day}: ${d.cleared}/${d.total} cleared, +${d.xpEarned} XP">${day[0]}</div>`;
+    }).reverse().join('')}</div>
+    ${penaltyDays > 0 ? `<div class="weekly-note">${penaltyDays} penalty day${penaltyDays > 1 ? 's' : ''} this week.</div>` : ''}
+  `;
+}
+
+// How many times each stat has been flagged as the weak/focus stat overall —
+// a structural signal: a stat flagged constantly might mean its pool targets
+// are miscalibrated rather than you actually slacking on it.
+function renderWeakStatHistory() {
+  const section = el('weakStatHistory');
+  const counts = state.weakStatCounts || {};
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (total === 0) {
+    section.innerHTML = '<div class="log-empty">No stat has been flagged weak yet.</div>';
+    return;
+  }
+  const maxCount = Math.max(...Object.values(counts));
+  section.innerHTML = STATS.map(s => {
+    const n = counts[s.id] || 0;
+    if (n === 0) return '';
+    const pct = Math.round((n / maxCount) * 100);
+    return `
+      <div class="weak-history-row">
+        <span class="weak-history-id">${s.id}</span>
+        <div class="weak-history-bar"><div class="weak-history-fill" style="width:${pct}%"></div></div>
+        <span class="weak-history-count">${n}×</span>
+      </div>`;
+  }).join('');
 }
 
 function renderPenalty() {
@@ -790,6 +932,7 @@ function openQuestModal(mode = 'oneoff') {
   questModalMode = mode;
   el('qName').value = '';
   el('qUnit').value = '';
+  el('qAnywhere').checked = false;
   for (let i = 0; i < 4; i++) {
     el('qTierTarget' + i).value = '';
     el('qTierXP' + i).value = '';
@@ -797,10 +940,47 @@ function openQuestModal(mode = 'oneoff') {
   const sel = el('qStat');
   sel.innerHTML = STATS.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   el('questModalTitle').textContent = mode === 'daily' ? 'NEW DAILY QUEST' : 'NEW QUEST';
+  el('qAnywhereRow').classList.toggle('hidden', mode !== 'daily');
   el('questModal').classList.remove('hidden');
 }
 
 function closeQuestModal() { el('questModal').classList.add('hidden'); }
+
+// Rounds a target to a clean-looking number depending on magnitude, so
+// auto-suggested tiers don't come out as ugly values like "23.7 reps".
+function roundNice(value, unit) {
+  if (value <= 0) return 0;
+  if (value < 3) return Math.max(1, Math.round(value));
+  if (value < 20) return Math.round(value);
+  if (value < 100) return Math.round(value / 5) * 5;
+  return Math.round(value / 10) * 10;
+}
+
+// Derived from the ratios across the app's default quest pool (Easy/Hard/
+// Brutal relative to Medium, averaged across ~50 quests): Easy runs about
+// 0.4x Medium, Hard about 1.9x, Brutal about 3.2x — same ratio applies to
+// both target and XP since they scale together in the existing data.
+const TIER_SCALE_RATIOS = { easy: 0.4, hard: 1.9, brutal: 3.2 };
+
+function autoFillTiersFromMedium() {
+  const medTarget = parseFloat(el('qTierTarget1').value);
+  const medXp = parseInt(el('qTierXP1').value);
+  if (!medTarget || medTarget <= 0) {
+    showToast('Enter a Medium target first.');
+    return;
+  }
+  const xpBase = medXp && medXp > 0 ? medXp : Math.max(10, Math.round(medTarget * 2)); // reasonable XP if left blank
+
+  el('qTierTarget0').value = roundNice(medTarget * TIER_SCALE_RATIOS.easy);
+  el('qTierXP0').value = Math.round(xpBase * TIER_SCALE_RATIOS.easy / 5) * 5;
+  el('qTierXP1').value = xpBase;
+  el('qTierTarget2').value = roundNice(medTarget * TIER_SCALE_RATIOS.hard);
+  el('qTierXP2').value = Math.round(xpBase * TIER_SCALE_RATIOS.hard / 5) * 5;
+  el('qTierTarget3').value = roundNice(medTarget * TIER_SCALE_RATIOS.brutal);
+  el('qTierXP3').value = Math.round(xpBase * TIER_SCALE_RATIOS.brutal / 5) * 5;
+
+  showToast('Tiers auto-filled from Medium. Adjust as needed.');
+}
 
 function saveNewQuest() {
   const name = el('qName').value.trim();
@@ -820,8 +1000,9 @@ function saveNewQuest() {
   if (tiers.length === 0) { showToast('Set at least one difficulty tier.'); return; }
 
   if (questModalMode === 'daily') {
+    const anywhere = el('qAnywhere').checked;
     if (!state.questPool[stat]) state.questPool[stat] = [];
-    state.questPool[stat].push({ id: 'p_' + stat.toLowerCase() + '_' + Date.now(), name, unit, stat, tiers });
+    state.questPool[stat].push({ id: 'p_' + stat.toLowerCase() + '_' + Date.now(), name, unit, stat, anywhere, tiers });
     saveState();
     renderDailyTemplateList();
   } else {
@@ -864,7 +1045,7 @@ function renderDailyTemplateList() {
       const isRolledToday = state.dailyRoll[s.id] === q.id;
       row.innerHTML = `
         <div class="daily-template-info">
-          <div>${q.name}${isRolledToday ? ' <span class="rolled-today-tag">today\'s pick</span>' : ''}</div>
+          <div>${q.name}${isRolledToday ? ' <span class="rolled-today-tag">today\'s pick</span>' : ''}${q.anywhere ? ' <span class="anywhere-tag">anywhere</span>' : ''}</div>
           <div class="daily-template-meta">${tierSummary} ${q.unit}</div>
         </div>
         <button class="quest-delete" data-id="${q.id}">✕</button>
@@ -950,6 +1131,7 @@ function init() {
   el('addQuestBtn').addEventListener('click', () => openQuestModal('oneoff'));
   el('qCancel').addEventListener('click', closeQuestModal);
   el('qSave').addEventListener('click', saveNewQuest);
+  el('autoFillTiersBtn').addEventListener('click', autoFillTiersFromMedium);
 
   el('manageQuestsBtn').addEventListener('click', openDailyModal);
   el('dailyClose').addEventListener('click', closeDailyModal);
