@@ -1,4 +1,4 @@
-const CACHE_NAME = 'system-app-v8';
+const CACHE_NAME = 'system-app-v8e'; // asset refresh — added LANG stat (Craft Pilgrimage, always-required), additive to existing saves
 const ASSETS = [
   './',
   './index.html',

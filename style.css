@@ -135,10 +135,18 @@ button, input, select { font-family: inherit; }
   border-color: rgba(255,210,61,0.4); background: rgba(255,210,61,0.04);
 }
 .stat-row.weak::before { background: var(--gold); box-shadow: 0 0 6px rgba(255,210,61,0.6); }
+.stat-row.lang-row {
+  border-color: rgba(230,250,255,0.3); background: rgba(230,250,255,0.02);
+}
+.stat-row.lang-row::before { background: var(--text); box-shadow: 0 0 6px rgba(230,250,255,0.5); }
 .stat-id { font-size: 11px; letter-spacing: 2px; color: var(--text-dim); width: 46px; flex-shrink: 0; }
 .stat-name { font-size: 13px; flex: 1; color: var(--text); }
 .weak-stat-tag {
   font-size: 8px; letter-spacing: 1px; color: var(--gold); border: 1px solid var(--gold);
+  padding: 1px 5px; flex-shrink: 0; white-space: nowrap;
+}
+.lang-row-tag {
+  font-size: 8px; letter-spacing: 1px; color: var(--text); border: 1px solid var(--text);
   padding: 1px 5px; flex-shrink: 0; white-space: nowrap;
 }
 .stat-level { font-size: 18px; font-weight: 700; color: var(--cyan); min-width: 30px; text-align: right; font-family: 'Orbitron', sans-serif; }
@@ -178,6 +186,19 @@ button, input, select { font-family: inherit; }
   background: rgba(255,210,61,0.04);
   box-shadow: 0 0 14px rgba(255,210,61,0.12);
 }
+.quest-card.lang-required {
+  border-left: 3px solid var(--text); border-color: rgba(230,250,255,0.4);
+  background: rgba(230,250,255,0.03);
+  box-shadow: 0 0 14px rgba(230,250,255,0.1);
+}
+.quest-card.penalty-card {
+  border-left: 3px solid var(--red); border-color: rgba(255,59,78,0.45);
+  background: rgba(255,59,78,0.04);
+}
+.penalty-source-tag {
+  font-size: 8px; letter-spacing: 1px; color: var(--red); border: 1px solid var(--red);
+  padding: 1px 5px; margin-left: 4px; vertical-align: middle;
+}
 .quest-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
 .quest-name { font-size: 13px; color: var(--text); }
 .quest-name.done { color: var(--cyan); }
@@ -196,6 +217,11 @@ button, input, select { font-family: inherit; }
   padding: 2px 6px; flex-shrink: 0; white-space: nowrap;
   text-shadow: 0 0 6px rgba(255,210,61,0.5);
 }
+.lang-tag {
+  font-size: 9px; letter-spacing: 1px; color: var(--text); border: 1px solid var(--text);
+  padding: 2px 6px; flex-shrink: 0; white-space: nowrap;
+  text-shadow: 0 0 6px rgba(230,250,255,0.5);
+}
 .focus-banner {
   background: rgba(255,210,61,0.07); border: 1px solid rgba(255,210,61,0.4);
   color: var(--text); font-size: 11px; line-height: 1.5; padding: 10px 12px;
@@ -205,6 +231,16 @@ button, input, select { font-family: inherit; }
   display: inline-block; color: var(--gold); font-size: 10px; letter-spacing: 1px;
   border: 1px solid var(--gold); padding: 1px 6px; margin-right: 6px;
   text-shadow: 0 0 6px rgba(255,210,61,0.5);
+}
+.lang-banner {
+  background: rgba(230,250,255,0.05); border: 1px solid rgba(230,250,255,0.35);
+  color: var(--text); font-size: 11px; line-height: 1.5; padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.lang-banner-tag {
+  display: inline-block; color: var(--text); font-size: 10px; letter-spacing: 1px;
+  border: 1px solid var(--text); padding: 1px 6px; margin-right: 6px;
+  text-shadow: 0 0 6px rgba(230,250,255,0.5);
 }
 .daily-progress-count {
   font-size: 11px; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px;
@@ -218,9 +254,20 @@ button, input, select { font-family: inherit; }
 .quest-bar-fill.partial { background: var(--gold); }
 .quest-progress-text { font-size: 10px; color: var(--text-dim); margin-top: 5px; text-align: right; }
 .quest-check { color: var(--cyan); font-size: 11px; }
+.quest-card-actions {
+  display: flex; justify-content: flex-end; gap: 14px; margin-top: 8px;
+}
+.quest-edit-inline {
+  background: none; border: none; color: var(--cyan-dim); font-size: 10px;
+  letter-spacing: 0.5px; cursor: pointer; padding: 0;
+}
 .quest-delete {
-  background: none; border: none; color: var(--text-dim); font-size: 14px;
-  padding: 0 0 0 10px; cursor: pointer;
+  background: none; border: none; color: var(--text-dim); font-size: 10px;
+  letter-spacing: 0.5px; padding: 0; cursor: pointer;
+}
+.quest-edit {
+  background: none; border: 1px solid var(--cyan-dim); color: var(--cyan-dim);
+  font-size: 9px; letter-spacing: 1px; padding: 4px 8px; cursor: pointer; flex-shrink: 0;
 }
 .reroll-btn {
   width: 100%; margin-top: 9px; background: transparent; border: 1px dashed var(--text-dim);
@@ -340,6 +387,14 @@ button, input, select { font-family: inherit; }
 .field-row { display: flex; gap: 8px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
 .modal-actions .sys-btn { flex: 1; }
+
+.export-textarea {
+  width: 100%; min-height: 160px; background: var(--panel); border: 1px solid var(--line);
+  color: var(--text); padding: 10px; font-size: 10px; font-family: 'Share Tech Mono', monospace;
+  outline: none; resize: vertical; line-height: 1.4; word-break: break-all;
+}
+.export-textarea:focus { border-color: var(--cyan-dim); }
+.data-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 
 .daily-template-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 50vh; overflow-y: auto; }
 .daily-template-row {

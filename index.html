@@ -83,6 +83,16 @@
         <span class="job-label">PENALTY DEBUFF</span>
         <span id="debuffValue" class="job-value debuff-value">-0% XP</span>
       </div>
+
+      <div class="panel-divider"></div>
+      <div class="quest-section-header">
+        <span>DATA</span>
+      </div>
+      <div class="data-actions">
+        <button id="exportDataBtn" class="sys-btn ghost full-width">EXPORT SAVE DATA</button>
+        <button id="importDataBtn" class="sys-btn ghost full-width">IMPORT SAVE DATA</button>
+      </div>
+      <div class="field-hint">Export gives you a text backup of everything — levels, XP, quest pools, history. Save it somewhere before updating the app, or use it to move your progress to a new phone.</div>
     </section>
 
     <!-- QUESTS TAB -->
@@ -107,6 +117,7 @@
 
       <div class="panel-divider"></div>
       <button id="manageQuestsBtn" class="sys-btn ghost full-width">MANAGE QUEST POOL</button>
+      <button id="managePenaltyBtn" class="sys-btn ghost full-width" style="margin-top:8px;">MANAGE PENALTY QUESTS</button>
     </section>
 
     <!-- LOG TAB -->
@@ -203,6 +214,58 @@
     <div class="modal-actions">
       <button id="progressCancel" class="sys-btn ghost">CANCEL</button>
       <button id="progressSave" class="sys-btn">LOG</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Penalty Quest Pool Modal -->
+<div id="penaltyPoolModal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-title">PENALTY QUESTS</div>
+    <div class="field-hint" style="margin:0 0 14px;">When a cycle fails, one quest is picked from the weak stat's pool (or a random stat if none is flagged). The target shown is at fail-streak 1 — it grows by the increment each consecutive fail.</div>
+    <div id="penaltyPoolList" class="daily-template-list"></div>
+
+    <div class="panel-divider"></div>
+    <label class="field-label">NAME</label>
+    <input id="ppName" class="field-input" type="text" placeholder="e.g. Burpees" maxlength="40">
+    <label class="field-label">UNIT</label>
+    <input id="ppUnit" class="field-input" type="text" placeholder="reps / min" maxlength="14">
+    <label class="field-label">STAT</label>
+    <select id="ppStat" class="field-input"></select>
+    <label class="field-label">BASE TARGET (at fail-streak 1)</label>
+    <input id="ppBaseTarget" class="field-input" type="number" min="1" placeholder="e.g. 100">
+    <label class="field-label">INCREMENT PER CONSECUTIVE FAIL</label>
+    <input id="ppIncrement" class="field-input" type="number" min="1" placeholder="e.g. 50">
+    <button id="ppAddBtn" class="sys-btn ghost full-width" style="margin-top:12px;">+ ADD PENALTY QUEST</button>
+
+    <div class="modal-actions">
+      <button id="penaltyPoolClose" class="sys-btn">DONE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Save Data Modal -->
+<div id="exportModal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-title">EXPORT SAVE DATA</div>
+    <div class="field-hint" style="margin:0 0 10px;">Copy this text and store it somewhere safe (notes app, email to yourself, etc). Paste it back in via IMPORT to restore.</div>
+    <textarea id="exportTextarea" class="export-textarea" readonly></textarea>
+    <div class="modal-actions">
+      <button id="exportClose" class="sys-btn ghost">CLOSE</button>
+      <button id="exportCopyBtn" class="sys-btn">COPY TO CLIPBOARD</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Save Data Modal -->
+<div id="importModal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-title">IMPORT SAVE DATA</div>
+    <div class="field-hint" style="margin:0 0 10px;">Pasting valid save data will <strong>overwrite</strong> everything currently in the app — levels, XP, quest pools, history. This can't be undone unless you've exported the current state first.</div>
+    <textarea id="importTextarea" class="export-textarea" placeholder="Paste exported save data here..."></textarea>
+    <div class="modal-actions">
+      <button id="importClose" class="sys-btn ghost">CANCEL</button>
+      <button id="importConfirmBtn" class="sys-btn danger">OVERWRITE & IMPORT</button>
     </div>
   </div>
 </div>

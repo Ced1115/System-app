@@ -9,7 +9,17 @@ const STATS = [
   { id: 'INT', name: 'Intelligence' }, // learning / study
   { id: 'SNS', name: 'Sense' },      // archery, balance, reaction/reflex, breathwork/focus
   { id: 'DIS', name: 'Discipline' }, // chores, life admin, hygiene, errands — the unglamorous stuff
+  { id: 'LANG', name: 'Language' },  // Craft Pilgrimage language prep — always mandatory, see LANG_ALWAYS_REQUIRED
 ];
+
+// LANG is permanently mandatory (Craft Pilgrimage prep) rather than subject
+// to the weak-stat rotation, so it's excluded from weak-stat detection in
+// both directions: it can never BE flagged weak, and it doesn't count
+// toward the average other stats are compared against. Including it would
+// skew the average upward (it levels every single day, unlike the others
+// which only roll in 4-of-7) and create confusing double-jeopardy on top of
+// its existing always-required status.
+const WEAK_STAT_ELIGIBLE = STATS.filter(s => s.id !== 'LANG');
 
 const RANKS = [
   { min: 1, label: 'E' }, { min: 10, label: 'D' }, { min: 20, label: 'C' },
@@ -44,16 +54,17 @@ function relativeStatLevel(statId) {
 }
 
 // Returns the stat id that's at least WEAK_STAT_THRESHOLD levels behind the
-// average of all OTHER stats, or null if nothing qualifies. Only ever
-// returns one stat — the single furthest-behind one, if it clears the bar.
+// average of all OTHER eligible stats, or null if nothing qualifies. LANG is
+// excluded entirely (see WEAK_STAT_ELIGIBLE) since it's already always-
+// required and levels at a different rate than the rotating stats.
 function findWeakStat() {
   const levels = {};
-  STATS.forEach(s => { levels[s.id] = relativeStatLevel(s.id); });
+  WEAK_STAT_ELIGIBLE.forEach(s => { levels[s.id] = relativeStatLevel(s.id); });
 
   let weakest = null;
   let worstGap = 0;
-  STATS.forEach(s => {
-    const others = STATS.filter(o => o.id !== s.id).map(o => levels[o.id]);
+  WEAK_STAT_ELIGIBLE.forEach(s => {
+    const others = WEAK_STAT_ELIGIBLE.filter(o => o.id !== s.id).map(o => levels[o.id]);
     const avgOthers = others.reduce((a, b) => a + b, 0) / others.length;
     const gap = avgOthers - levels[s.id];
     if (gap >= WEAK_STAT_THRESHOLD && gap > worstGap) {
@@ -82,6 +93,7 @@ function defaultState() {
     xp: 0,
     stats,
     questPool: defaultQuestPool(),
+    penaltyQuestPool: defaultPenaltyQuestPool(),
     dailyRoll: {},          // { STR: questId, VIT: questId, ... } — today's mandatory pick per stat
     lastRoll: {},           // { STR: questId, ... } — yesterday's pick, so we avoid repeats
     todayWeakStat: null,    // stat id flagged as "weak" for the current cycle, or null
@@ -141,7 +153,7 @@ function defaultQuestPool() {
     ],
     INT: [
       { id: 'p_int_1', name: 'Study', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 120, 60) },
-      { id: 'p_int_2', name: 'Japanese (Anki / Genki)', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 90, 60) },
+      { id: 'p_int_2', name: 'Gap-Year Logistics Research', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 50, 35, 80, 60) },
       { id: 'p_int_3', name: 'Robotics / Code Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
       { id: 'p_int_4', name: 'Reading (non-fiction)', unit: 'min', stat: 'INT', anywhere: true, tiers: defaultTiers(15, 8, 30, 20, 60, 35, 100, 60) },
       { id: 'p_int_5', name: 'CAD / Design Work', unit: 'min', stat: 'INT', tiers: defaultTiers(20, 10, 45, 25, 90, 45, 150, 80) },
@@ -172,6 +184,66 @@ function defaultQuestPool() {
       { id: 'p_dis_9', name: 'Budget / Finance Review', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 40, 45, 60, 70) },
       { id: 'p_dis_10', name: 'Inbox Zero / Messages Cleanup', unit: 'min', stat: 'DIS', tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
     ],
+    // Craft Pilgrimage language prep — permanently mandatory (see LANG in
+    // STATS). Japanese-only for now since it's the current priority (JLPT
+    // N4 target); Italian and Spanish quests get added here closer to
+    // departure, tagged the same way (just add `lang: 'IT'` / `lang: 'ES'`
+    // if per-language filtering is ever needed — not required yet since
+    // it's all Japanese for the time being).
+    LANG: [
+      { id: 'p_lang_1', name: 'Anki Review (Japanese)', unit: 'min', stat: 'LANG', anywhere: true, tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
+      { id: 'p_lang_2', name: 'Genki Grammar Drill', unit: 'min', stat: 'LANG', anywhere: true, tiers: defaultTiers(15, 10, 30, 25, 50, 45, 80, 70) },
+      { id: 'p_lang_3', name: 'JLPT Past Paper Practice', unit: 'min', stat: 'LANG', tiers: defaultTiers(20, 12, 40, 28, 70, 50, 110, 80) },
+      { id: 'p_lang_4', name: 'Kanji Writing Practice', unit: 'min', stat: 'LANG', anywhere: true, tiers: defaultTiers(10, 10, 20, 25, 35, 45, 60, 70) },
+      { id: 'p_lang_5', name: 'Listening Practice (audio/video)', unit: 'min', stat: 'LANG', anywhere: true, tiers: defaultTiers(10, 10, 20, 25, 40, 45, 70, 70) },
+      { id: 'p_lang_6', name: 'Shadowing / Speaking Practice', unit: 'min', stat: 'LANG', anywhere: true, tiers: defaultTiers(5, 10, 15, 25, 25, 45, 45, 70) },
+      { id: 'p_lang_7', name: 'Vocabulary Drill (new words)', unit: 'words', stat: 'LANG', anywhere: true, tiers: defaultTiers(10, 10, 25, 25, 50, 45, 80, 70) },
+    ],
+  };
+}
+
+// Penalty quests — no tiers, no XP reward, just a punishing flat target that
+// escalates with consecutive fail streaks. One stat's pool gets chosen (the
+// weak stat if one was flagged that cycle, otherwise a random stat), then
+// one quest from that pool is picked at random. baseTarget is the amount at
+// failStreak = 1; triggerPenalty() scales it up from there.
+function defaultPenaltyQuestPool() {
+  return {
+    STR: [
+      { id: 'pp_str_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_str_2', name: 'Push-ups', unit: 'reps', baseTarget: 150, increment: 75 },
+      { id: 'pp_str_3', name: 'Squats', unit: 'reps', baseTarget: 150, increment: 75 },
+    ],
+    VIT: [
+      { id: 'pp_vit_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_vit_2', name: 'Sprints (all-out, short rest)', unit: 'min', baseTarget: 15, increment: 8 },
+      { id: 'pp_vit_3', name: 'Jump Rope', unit: 'min', baseTarget: 15, increment: 8 },
+    ],
+    AGI: [
+      { id: 'pp_agi_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_agi_2', name: 'Jumping Jacks', unit: 'reps', baseTarget: 200, increment: 100 },
+      { id: 'pp_agi_3', name: 'Mountain Climbers', unit: 'reps', baseTarget: 150, increment: 75 },
+    ],
+    INT: [
+      { id: 'pp_int_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_int_2', name: 'Extra Study Block (no phone)', unit: 'min', baseTarget: 60, increment: 30 },
+      { id: 'pp_int_3', name: 'Extra Reading Block', unit: 'min', baseTarget: 40, increment: 20 },
+    ],
+    SNS: [
+      { id: 'pp_sns_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_sns_2', name: 'Wall Sit', unit: 'min', baseTarget: 10, increment: 5 },
+      { id: 'pp_sns_3', name: 'Single-Leg Balance Hold (each side)', unit: 'min', baseTarget: 8, increment: 4 },
+    ],
+    DIS: [
+      { id: 'pp_dis_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_dis_2', name: 'Full Deep Clean (no shortcuts)', unit: 'min', baseTarget: 45, increment: 20 },
+      { id: 'pp_dis_3', name: 'Plank Hold', unit: 'min', baseTarget: 8, increment: 4 },
+    ],
+    LANG: [
+      { id: 'pp_lang_1', name: 'Burpees', unit: 'reps', baseTarget: 100, increment: 50 },
+      { id: 'pp_lang_2', name: 'Extra Kanji Writing Drill', unit: 'min', baseTarget: 45, increment: 20 },
+      { id: 'pp_lang_3', name: 'Extra Anki Catch-up Block', unit: 'min', baseTarget: 40, increment: 20 },
+    ],
   };
 }
 
@@ -187,6 +259,7 @@ function loadState() {
     return Object.assign(defaults, parsed, {
       stats: Object.assign({}, defaults.stats, parsed.stats),
       questPool: Object.assign({}, defaults.questPool, parsed.questPool),
+      penaltyQuestPool: Object.assign({}, defaults.penaltyQuestPool, parsed.penaltyQuestPool),
     });
   } catch (e) {
     console.error('Failed to load state', e);
@@ -196,6 +269,94 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// ---------------- Export / Import ----------------
+
+function openExportModal() {
+  el('exportTextarea').value = JSON.stringify(state, null, 2);
+  el('exportModal').classList.remove('hidden');
+}
+
+function closeExportModal() { el('exportModal').classList.add('hidden'); }
+
+async function copyExportToClipboard() {
+  const text = el('exportTextarea').value;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard.');
+    } else {
+      throw new Error('Clipboard API unavailable');
+    }
+  } catch (e) {
+    // fallback for browsers/contexts where the Clipboard API is blocked —
+    // select the text so the user can copy manually with their keyboard
+    const ta = el('exportTextarea');
+    ta.focus();
+    ta.select();
+    showToast('Couldn\'t auto-copy — text is selected, use copy manually.');
+  }
+}
+
+function openImportModal() {
+  el('importTextarea').value = '';
+  el('importModal').classList.remove('hidden');
+}
+
+function closeImportModal() { el('importModal').classList.add('hidden'); }
+
+// Checks that a parsed object has the core shape we actually depend on
+// before accepting it as valid save data — catches garbage/unrelated JSON
+// without trying to be a full schema validator.
+// Checks that a parsed object has the core shape we actually depend on
+// before accepting it as valid save data — catches garbage/unrelated JSON
+// without trying to be a full schema validator. Deliberately checks only
+// the original always-present stats (not any added later, like LANG) so
+// older exports from before a stat was added still import successfully;
+// the merge in confirmImport() backfills anything missing from defaults.
+const CORE_STATS_FOR_VALIDATION = ['STR', 'VIT', 'AGI', 'INT', 'SNS', 'DIS'];
+
+function looksLikeValidState(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  if (typeof obj.level !== 'number' || typeof obj.xp !== 'number') return false;
+  if (!obj.stats || typeof obj.stats !== 'object') return false;
+  const hasCoreStats = CORE_STATS_FOR_VALIDATION.every(id => obj.stats[id] && typeof obj.stats[id].level === 'number');
+  if (!hasCoreStats) return false;
+  if (!obj.questPool || typeof obj.questPool !== 'object') return false;
+  return true;
+}
+
+function confirmImport() {
+  const raw = el('importTextarea').value.trim();
+  if (!raw) {
+    showToast('Paste your exported save data first.');
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    showToast('That doesn\'t look like valid save data — check you copied the full text.');
+    return;
+  }
+  if (!looksLikeValidState(parsed)) {
+    showToast('That JSON is valid but doesn\'t match this app\'s save format.');
+    return;
+  }
+
+  // merge onto a fresh default so any fields missing from an older export
+  // (from a previous app version) still get sane defaults instead of crashing
+  const defaults = defaultState();
+  state = Object.assign(defaults, parsed, {
+    stats: Object.assign({}, defaults.stats, parsed.stats),
+    questPool: Object.assign({}, defaults.questPool, parsed.questPool),
+    penaltyQuestPool: Object.assign({}, defaults.penaltyQuestPool, parsed.penaltyQuestPool),
+  });
+  saveState();
+  render();
+  closeImportModal();
+  showToast('Save data imported successfully.');
 }
 
 // ---------------- Daily reset / rollover ----------------
@@ -221,7 +382,7 @@ function nextResetTime() {
   return reset;
 }
 
-const REQUIRED_CLEARS = 4; // out of STATS.length (6) mandatory daily quests
+const REQUIRED_CLEARS = 4; // out of STATS.length (7, including LANG) mandatory daily quests — LANG is separately always-required on top of this count, see checkDailyRollover
 const DEBUFF_PER_FAIL = 0.15;  // -15% XP gain per consecutive failed cycle
 const DEBUFF_CAP = 0.60;       // caps at -60% XP gain
 const STAT_LOSS_PER_FAIL = 0.15; // -15% of current stat's xp-to-next per consecutive fail
@@ -254,25 +415,31 @@ function checkDailyRollover() {
     if (prog && prog.tiersCleared && prog.tiersCleared.some(Boolean)) clearedCount += 1;
   });
 
-  // hard requirement: if a stat was flagged as "weak" for today's cycle, its
-  // quest MUST clear — failing it alone triggers a penalty regardless of how
-  // many of the other 6 cleared. Uses the snapshot taken when today was
-  // rolled, not a fresh recalculation (stat levels may have shifted since).
-  let weakStatFailed = false;
-  if (state.todayWeakStat) {
-    const qid = state.dailyRoll[state.todayWeakStat];
+  // hard requirements layered on top of the general REQUIRED_CLEARS quota:
+  // 1) LANG is always mandatory (Craft Pilgrimage prep) — failing it alone
+  //    triggers a penalty no matter how many of the other 6 cleared.
+  // 2) if a stat was flagged "weak" for today's cycle, its quest is also a
+  //    hard requirement, same logic. Uses the snapshot taken when today was
+  //    rolled, not a fresh recalculation (stat levels may have shifted since).
+  const wasQuestCleared = (statId) => {
+    const qid = state.dailyRoll[statId];
     const prog = qid && state.dailyProgress[qid];
-    const cleared = prog && prog.tiersCleared && prog.tiersCleared.some(Boolean);
-    if (!cleared) weakStatFailed = true;
-  }
+    return !!(prog && prog.tiersCleared && prog.tiersCleared.some(Boolean));
+  };
+
+  const langFailed = !!state.dailyRoll.LANG && !wasQuestCleared('LANG');
+  const weakStatFailed = !!state.todayWeakStat && !wasQuestCleared(state.todayWeakStat);
 
   const hadFullRoll = STATS.every(s => !!state.dailyRoll[s.id]);
-  const penaltyTriggeredToday = hadFullRoll && (clearedCount < REQUIRED_CLEARS || weakStatFailed);
+  const penaltyTriggeredToday = hadFullRoll && (clearedCount < REQUIRED_CLEARS || langFailed || weakStatFailed);
 
   if (penaltyTriggeredToday) {
     state.failStreak += 1;
     applyStatLossForFailedCycle();
     triggerPenalty();
+    if (langFailed && clearedCount >= REQUIRED_CLEARS && !weakStatFailed) {
+      addLog('penalty', 'Language quest was not cleared — penalty triggered despite meeting the general quota. Craft Pilgrimage prep doesn\'t get skipped.');
+    }
     if (weakStatFailed && clearedCount >= REQUIRED_CLEARS) {
       addLog('penalty', 'Focus quest (' + state.todayWeakStat + ') was not cleared — penalty triggered despite meeting the general quota.');
     }
@@ -396,15 +563,40 @@ function tierFraction(current, target) {
 
 function triggerPenalty() {
   state.penaltyActive = true;
-  const burpeeTarget = 100 + state.failStreak * 50; // escalates with consecutive fails
-  state.penaltyQuest = {
-    id: 'penalty_' + Date.now(),
-    name: 'Penalty Quest: ' + burpeeTarget + ' Burpees',
-    target: burpeeTarget,
-    unit: 'reps',
-    current: 0,
-  };
-  addLog('penalty', 'PENALTY ZONE triggered — failed cycle #' + state.failStreak + ' in a row.');
+
+  // pick which stat's penalty pool to draw from: today's weak stat if one
+  // was flagged, otherwise a random stat — so the punishment ties back to
+  // whatever was actually neglected when possible, per the user's request
+  const sourceStat = state.todayWeakStat || STATS[Math.floor(Math.random() * STATS.length)].id;
+  const pool = (state.penaltyQuestPool && state.penaltyQuestPool[sourceStat]) || [];
+
+  if (pool.length === 0) {
+    // safety net: should never happen with default pools, but if a stat's
+    // penalty pool was emptied out entirely, fall back to a generic burpee task
+    state.penaltyQuest = {
+      id: 'penalty_' + Date.now(),
+      name: 'Penalty Quest: ' + (100 + state.failStreak * 50) + ' Burpees',
+      target: 100 + state.failStreak * 50,
+      unit: 'reps',
+      current: 0,
+      sourceStat: null,
+    };
+  } else {
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const target = pick.baseTarget + (state.failStreak - 1) * pick.increment;
+    state.penaltyQuest = {
+      id: 'penalty_' + Date.now(),
+      name: pick.name,
+      target,
+      unit: pick.unit,
+      current: 0,
+      sourceStat,
+    };
+  }
+
+  addLog('penalty', 'PENALTY ZONE triggered — failed cycle #' + state.failStreak + ' in a row. Penalty: ' +
+    state.penaltyQuest.target + ' ' + state.penaltyQuest.unit + ' ' + state.penaltyQuest.name +
+    (state.penaltyQuest.sourceStat ? ' (' + state.penaltyQuest.sourceStat + ')' : '') + '.');
 }
 
 function clearPenalty() {
@@ -508,11 +700,12 @@ function renderStatus() {
     const needed = statXpNeeded(data.level);
     const pct = Math.min(100, (data.xp / needed) * 100);
     const row = document.createElement('div');
-    row.className = 'stat-row' + (s.id === weakStat ? ' weak' : '');
+    row.className = 'stat-row' + (s.id === weakStat ? ' weak' : '') + (s.id === 'LANG' ? ' lang-row' : '');
     row.innerHTML = `
       <span class="stat-id">${s.id}</span>
       <span class="stat-name">${s.name}</span>
       ${s.id === weakStat ? '<span class="weak-stat-tag">WEAK</span>' : ''}
+      ${s.id === 'LANG' ? '<span class="lang-row-tag">PILGRIMAGE</span>' : ''}
       <span class="stat-level">${data.level}</span>
       <div class="stat-mini-bar"><div class="stat-mini-fill" style="width:${pct}%"></div></div>
     `;
@@ -543,6 +736,13 @@ function renderQuests() {
   const dailyList = el('dailyQuestList');
   dailyList.innerHTML = '';
 
+  if (state.dailyRoll.LANG) {
+    const banner = document.createElement('div');
+    banner.className = 'lang-banner';
+    banner.innerHTML = `<span class="lang-banner-tag">PILGRIMAGE</span> Language prep is always mandatory — Craft Pilgrimage priority. Failing it alone triggers a penalty.`;
+    dailyList.appendChild(banner);
+  }
+
   if (state.todayWeakStat) {
     const banner = document.createElement('div');
     banner.className = 'focus-banner';
@@ -552,10 +752,13 @@ function renderQuests() {
   }
 
   let clearedCount = 0;
-  // show the weak stat's quest first so it can't be missed, then the rest in stat order
-  const orderedStats = state.todayWeakStat
-    ? [STATS.find(s => s.id === state.todayWeakStat), ...STATS.filter(s => s.id !== state.todayWeakStat)]
-    : STATS;
+  // show LANG first (always-on priority), then the weak stat's quest if any,
+  // then the rest in stat order — so the two hard requirements are never buried
+  const priorityIds = ['LANG', state.todayWeakStat].filter(Boolean);
+  const orderedStats = [
+    ...priorityIds.map(id => STATS.find(s => s.id === id)).filter(Boolean),
+    ...STATS.filter(s => !priorityIds.includes(s.id)),
+  ];
   orderedStats.forEach(s => {
     const qid = state.dailyRoll[s.id];
     if (!qid) return;
@@ -563,8 +766,8 @@ function renderQuests() {
     if (!quest) return;
     const prog = state.dailyProgress[qid] || { current: 0, tierIndex: 0, tiersCleared: [false, false, false, false] };
     if (prog.tiersCleared.some(Boolean)) clearedCount += 1;
-    const isFocus = state.todayWeakStat === s.id;
-    dailyList.appendChild(buildTierQuestCard(quest, prog, 'daily', isFocus ? 'focus' : true));
+    const cardMode = s.id === 'LANG' ? 'lang' : (state.todayWeakStat === s.id ? 'focus' : true);
+    dailyList.appendChild(buildTierQuestCard(quest, prog, 'daily', cardMode));
   });
 
   el('dailyProgressCount').textContent = clearedCount + ' / ' + STATS.length + ' cleared · need ' + REQUIRED_CLEARS + ' to avoid penalty';
@@ -574,7 +777,7 @@ function renderQuests() {
   if (state.penaltyActive && state.penaltyQuest) {
     const pq = state.penaltyQuest;
     const card = buildFlatQuestCard(
-      { id: pq.id, name: pq.name, target: pq.target, unit: pq.unit, isPenalty: true },
+      { id: pq.id, name: pq.name, target: pq.target, unit: pq.unit, isPenalty: true, sourceStat: pq.sourceStat },
       { current: pq.current },
       'penalty'
     );
@@ -633,12 +836,16 @@ function buildTierQuestCard(quest, prog, kind, isMandatory) {
   const fraction = tierFraction(prog.current || 0, activeTier.target);
 
   const isFocus = isMandatory === 'focus';
+  const isLang = isMandatory === 'lang';
   const card = document.createElement('div');
-  card.className = 'quest-card' + (allCleared ? ' complete' : '') + (isFocus ? ' focus' : (isMandatory ? ' mandatory' : ''));
+  card.className = 'quest-card' + (allCleared ? ' complete' : '') +
+    (isLang ? ' lang-required' : (isFocus ? ' focus' : (isMandatory ? ' mandatory' : '')));
   const statLabel = quest.stat ? ' · ' + quest.stat : '';
-  const badge = isFocus
-    ? '<span class="focus-tag">FOCUS · REQUIRED</span>'
-    : (isMandatory ? '<span class="mandatory-tag">MANDATORY</span>' : '<span class="optional-tag">optional</span>');
+  const badge = isLang
+    ? '<span class="lang-tag">PILGRIMAGE · REQUIRED</span>'
+    : (isFocus
+      ? '<span class="focus-tag">FOCUS · REQUIRED</span>'
+      : (isMandatory ? '<span class="mandatory-tag">MANDATORY</span>' : '<span class="optional-tag">optional</span>'));
   const displayXP = state.penaltyActive ? Math.round(activeTier.xp * (1 - currentDebuffFraction())) : activeTier.xp;
   const xpDisplay = state.penaltyActive && displayXP < activeTier.xp
     ? `<span class="xp-debuffed">+${displayXP} XP</span> <span class="xp-original">+${activeTier.xp}</span>${statLabel}`
@@ -686,18 +893,30 @@ function buildTierQuestCard(quest, prog, kind, isMandatory) {
     card.appendChild(rerollBtn);
   }
   if (kind === 'oneoff') {
+    const actionRow = document.createElement('div');
+    actionRow.className = 'quest-card-actions';
+
+    const edit = document.createElement('button');
+    edit.className = 'quest-edit-inline';
+    edit.textContent = 'edit';
+    edit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openQuestModal('oneoff', quest);
+    });
+    actionRow.appendChild(edit);
+
     const del = document.createElement('button');
     del.className = 'quest-delete';
     del.textContent = '✕ remove';
-    del.style.marginTop = '8px';
-    del.style.fontSize = '10px';
     del.addEventListener('click', (e) => {
       e.stopPropagation();
       state.oneOffQuests = state.oneOffQuests.filter(q => q.id !== quest.id);
       saveState();
       render();
     });
-    card.appendChild(del);
+    actionRow.appendChild(del);
+
+    card.appendChild(actionRow);
   }
   card.addEventListener('click', () => openProgressModal(quest, kind));
   return card;
@@ -708,10 +927,11 @@ function buildFlatQuestCard(quest, prog, kind) {
   const pct = Math.min(100, ((prog.current || 0) / quest.target) * 100);
   const isComplete = (prog.current || 0) >= quest.target;
   const card = document.createElement('div');
-  card.className = 'quest-card' + (isComplete ? ' complete' : '');
+  card.className = 'quest-card' + (isComplete ? ' complete' : '') + (quest.isPenalty ? ' penalty-card' : '');
+  const sourceTag = quest.sourceStat ? ' <span class="penalty-source-tag">' + quest.sourceStat + '</span>' : '';
   card.innerHTML = `
     <div class="quest-top">
-      <span class="quest-name ${isComplete ? 'done' : ''}">${isComplete ? '✓ ' : ''}${quest.name}</span>
+      <span class="quest-name ${isComplete ? 'done' : ''}">${isComplete ? '✓ ' : ''}${quest.name}${sourceTag}</span>
       <span class="quest-reward">${quest.isPenalty ? 'MAKEUP' : ''}</span>
     </div>
     <div class="quest-bar"><div class="quest-bar-fill ${isComplete ? 'full' : ''}" style="width:${pct}%"></div></div>
@@ -927,24 +1147,41 @@ function saveProgress() {
 // ---------------- One-off quest modal ----------------
 
 let questModalMode = 'oneoff';
+let editingQuestId = null; // null = creating new; set = editing this quest's id in place
 
-function openQuestModal(mode = 'oneoff') {
+function openQuestModal(mode = 'oneoff', existingQuest = null) {
   questModalMode = mode;
-  el('qName').value = '';
-  el('qUnit').value = '';
-  el('qAnywhere').checked = false;
+  editingQuestId = existingQuest ? existingQuest.id : null;
+
+  el('qName').value = existingQuest ? existingQuest.name : '';
+  el('qUnit').value = existingQuest ? existingQuest.unit : '';
+  el('qAnywhere').checked = existingQuest ? !!existingQuest.anywhere : false;
+
+  const labels = ['Easy', 'Medium', 'Hard', 'Brutal'];
   for (let i = 0; i < 4; i++) {
-    el('qTierTarget' + i).value = '';
-    el('qTierXP' + i).value = '';
+    const tier = existingQuest && existingQuest.tiers.find(t => t.label === labels[i]);
+    el('qTierTarget' + i).value = tier ? tier.target : '';
+    el('qTierXP' + i).value = tier ? tier.xp : '';
   }
+
   const sel = el('qStat');
   sel.innerHTML = STATS.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  el('questModalTitle').textContent = mode === 'daily' ? 'NEW DAILY QUEST' : 'NEW QUEST';
+  if (existingQuest) sel.value = existingQuest.stat;
+  sel.disabled = !!existingQuest; // changing a quest's stat mid-use would orphan its roll/progress history — block it
+
+  el('questModalTitle').textContent = existingQuest
+    ? 'EDIT QUEST'
+    : (mode === 'daily' ? 'NEW DAILY QUEST' : 'NEW QUEST');
   el('qAnywhereRow').classList.toggle('hidden', mode !== 'daily');
+  el('qSave').textContent = existingQuest ? 'SAVE CHANGES' : 'CONFIRM';
   el('questModal').classList.remove('hidden');
 }
 
-function closeQuestModal() { el('questModal').classList.add('hidden'); }
+function closeQuestModal() {
+  el('questModal').classList.add('hidden');
+  el('qStat').disabled = false;
+  editingQuestId = null;
+}
 
 // Rounds a target to a clean-looking number depending on magnitude, so
 // auto-suggested tiers don't come out as ugly values like "23.7 reps".
@@ -999,6 +1236,37 @@ function saveNewQuest() {
   }
   if (tiers.length === 0) { showToast('Set at least one difficulty tier.'); return; }
 
+  if (editingQuestId) {
+    if (questModalMode === 'daily') {
+      const quest = (state.questPool[stat] || []).find(q => q.id === editingQuestId);
+      if (quest) {
+        quest.name = name;
+        quest.unit = unit;
+        quest.anywhere = el('qAnywhere').checked;
+        quest.tiers = tiers;
+        clampProgressToTierCount(editingQuestId, tiers.length);
+      }
+      saveState();
+      renderDailyTemplateList();
+      render();
+    } else {
+      const quest = state.oneOffQuests.find(q => q.id === editingQuestId);
+      if (quest) {
+        quest.name = name;
+        quest.unit = unit;
+        quest.tiers = tiers;
+        if (quest.tierIndex >= tiers.length) quest.tierIndex = tiers.length - 1;
+        const oldCleared = quest.tiersCleared || [];
+        quest.tiersCleared = Array.from({ length: tiers.length }, (_, i) => !!oldCleared[i]);
+      }
+      saveState();
+      render();
+    }
+    closeQuestModal();
+    showToast('Quest updated: ' + name);
+    return;
+  }
+
   if (questModalMode === 'daily') {
     const anywhere = el('qAnywhere').checked;
     if (!state.questPool[stat]) state.questPool[stat] = [];
@@ -1015,6 +1283,17 @@ function saveNewQuest() {
   }
   closeQuestModal();
   showToast('Quest added: ' + name);
+}
+
+// If editing a pool quest reduces its tier count, clamp any in-progress
+// daily tracking so it doesn't reference a tier index that no longer
+// exists (e.g. today's tierIndex was 3 "Brutal" but the quest now only
+// has 2 tiers defined).
+function clampProgressToTierCount(questId, tierCount) {
+  const prog = state.dailyProgress[questId];
+  if (!prog) return;
+  if (prog.tierIndex >= tierCount) prog.tierIndex = tierCount - 1;
+  if (prog.tiersCleared) prog.tiersCleared.length = tierCount;
 }
 
 // ---------------- Daily template manager ----------------
@@ -1048,8 +1327,12 @@ function renderDailyTemplateList() {
           <div>${q.name}${isRolledToday ? ' <span class="rolled-today-tag">today\'s pick</span>' : ''}${q.anywhere ? ' <span class="anywhere-tag">anywhere</span>' : ''}</div>
           <div class="daily-template-meta">${tierSummary} ${q.unit}</div>
         </div>
+        <button class="quest-edit" data-id="${q.id}">EDIT</button>
         <button class="quest-delete" data-id="${q.id}">✕</button>
       `;
+      row.querySelector('.quest-edit').addEventListener('click', () => {
+        openQuestModal('daily', q);
+      });
       row.querySelector('.quest-delete').addEventListener('click', () => {
         if (pool.length <= 1) {
           showToast('Keep at least one quest per stat.');
@@ -1077,6 +1360,86 @@ function renderDailyTemplateList() {
 
 function addDailyTemplate() {
   openQuestModal('daily');
+}
+
+// ---------------- Penalty quest pool manager ----------------
+
+function openPenaltyPoolModal() {
+  el('ppStat').innerHTML = STATS.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  el('ppName').value = '';
+  el('ppUnit').value = '';
+  el('ppBaseTarget').value = '';
+  el('ppIncrement').value = '';
+  renderPenaltyPoolList();
+  el('penaltyPoolModal').classList.remove('hidden');
+}
+
+function closePenaltyPoolModal() {
+  el('penaltyPoolModal').classList.add('hidden');
+}
+
+function renderPenaltyPoolList() {
+  const list = el('penaltyPoolList');
+  list.innerHTML = '';
+  let any = false;
+  STATS.forEach(s => {
+    const pool = (state.penaltyQuestPool && state.penaltyQuestPool[s.id]) || [];
+    if (pool.length === 0) return;
+    any = true;
+    const header = document.createElement('div');
+    header.className = 'pool-stat-header';
+    header.textContent = s.name + ' (' + s.id + ')';
+    list.appendChild(header);
+
+    pool.forEach(pq => {
+      const row = document.createElement('div');
+      row.className = 'daily-template-row';
+      row.innerHTML = `
+        <div class="daily-template-info">
+          <div>${pq.name}</div>
+          <div class="daily-template-meta">${pq.baseTarget} ${pq.unit} at streak 1, +${pq.increment} per fail after</div>
+        </div>
+        <button class="quest-delete" data-id="${pq.id}">✕</button>
+      `;
+      row.querySelector('.quest-delete').addEventListener('click', () => {
+        if (pool.length <= 1) {
+          showToast('Keep at least one penalty quest per stat.');
+          return;
+        }
+        state.penaltyQuestPool[s.id] = state.penaltyQuestPool[s.id].filter(x => x.id !== pq.id);
+        saveState();
+        renderPenaltyPoolList();
+      });
+      list.appendChild(row);
+    });
+  });
+  if (!any) {
+    list.innerHTML = '<div class="log-empty">No penalty quests configured.</div>';
+  }
+}
+
+function addPenaltyQuest() {
+  const name = el('ppName').value.trim();
+  if (!name) { showToast('Enter a name.'); return; }
+  const unit = el('ppUnit').value.trim() || 'reps';
+  const stat = el('ppStat').value;
+  const baseTarget = parseFloat(el('ppBaseTarget').value);
+  const increment = parseFloat(el('ppIncrement').value);
+  if (!baseTarget || baseTarget <= 0) { showToast('Set a base target.'); return; }
+  if (!increment || increment <= 0) { showToast('Set an increment.'); return; }
+
+  if (!state.penaltyQuestPool) state.penaltyQuestPool = defaultPenaltyQuestPool();
+  if (!state.penaltyQuestPool[stat]) state.penaltyQuestPool[stat] = [];
+  state.penaltyQuestPool[stat].push({
+    id: 'pp_' + stat.toLowerCase() + '_' + Date.now(), name, unit, baseTarget, increment,
+  });
+  saveState();
+  renderPenaltyPoolList();
+  el('ppName').value = '';
+  el('ppUnit').value = '';
+  el('ppBaseTarget').value = '';
+  el('ppIncrement').value = '';
+  showToast('Penalty quest added: ' + name);
 }
 
 // ---------------- Level up / Toast ----------------
@@ -1137,8 +1500,19 @@ function init() {
   el('dailyClose').addEventListener('click', closeDailyModal);
   el('dailyAddBtn').addEventListener('click', addDailyTemplate);
 
+  el('managePenaltyBtn').addEventListener('click', openPenaltyPoolModal);
+  el('penaltyPoolClose').addEventListener('click', closePenaltyPoolModal);
+  el('ppAddBtn').addEventListener('click', addPenaltyQuest);
+
   el('progressCancel').addEventListener('click', closeProgressModal);
   el('progressSave').addEventListener('click', saveProgress);
+
+  el('exportDataBtn').addEventListener('click', openExportModal);
+  el('exportClose').addEventListener('click', closeExportModal);
+  el('exportCopyBtn').addEventListener('click', copyExportToClipboard);
+  el('importDataBtn').addEventListener('click', openImportModal);
+  el('importClose').addEventListener('click', closeImportModal);
+  el('importConfirmBtn').addEventListener('click', confirmImport);
 
   setInterval(() => {
     checkDailyRollover();
